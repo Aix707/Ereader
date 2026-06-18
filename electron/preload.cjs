@@ -10,7 +10,6 @@ contextBridge.exposeInMainWorld("ereader", {
   getTextUnits: (id) => ipcRenderer.invoke("content:getTextUnits", id),
   getPageUnits: (id) => ipcRenderer.invoke("content:getPageUnits", id),
   getAssetUrl: (assetId) => `ereader-asset://asset/${assetId}`,
-  getAssetDataUrl: (assetId) => ipcRenderer.invoke("content:getAssetDataUrl", assetId),
   rebuildBook: (id) => ipcRenderer.invoke("cache:rebuildBook", id),
   cancelImport: (id) => ipcRenderer.invoke("cache:cancelImport", id),
   getDiagnostics: () => ipcRenderer.invoke("diagnostics:summary"),

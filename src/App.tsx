@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DiagnosticsView } from "./components/DiagnosticsView";
 import { LibraryView } from "./components/LibraryView";
 import { ReaderView } from "./components/ReaderView";
@@ -10,6 +10,15 @@ export function App() {
   const [screen, setScreen] = useState<"library" | "diagnostics">("library");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const refreshTimer = useRef<number | null>(null);
+
+  const refreshLibrary = useCallback(() => {
+    if (refreshTimer.current) return;
+    refreshTimer.current = window.setTimeout(() => {
+      refreshTimer.current = null;
+      window.ereader.listLibrary().then(setStore).catch(() => undefined);
+    }, 200);
+  }, []);
 
   useEffect(() => {
     window.ereader
@@ -20,21 +29,23 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    return window.ereader.onImportStateChanged(() => {
-      window.ereader.listLibrary().then(setStore).catch(() => undefined);
-    });
+    return window.ereader.onImportStateChanged(refreshLibrary);
+  }, [refreshLibrary]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+    };
   }, []);
 
   useEffect(() => {
-    const hasActiveImports = store.books.some((book) =>
-      ["queued", "processing"].includes(book.importStatus || "")
-    );
+    const hasActiveImports = store.books.some((book) => isActiveImportStatus(book.importStatus));
     if (!hasActiveImports) return;
     const timer = window.setInterval(() => {
-      window.ereader.listLibrary().then(setStore).catch(() => undefined);
+      refreshLibrary();
     }, 1200);
     return () => window.clearInterval(timer);
-  }, [store.books]);
+  }, [refreshLibrary, store.books]);
 
   const activeBook = useMemo(
     () => store.books.find((book) => book.id === activeBookId) || null,
@@ -120,4 +131,8 @@ export function App() {
       onOpenDiagnostics={() => setScreen("diagnostics")}
     />
   );
+}
+
+function isActiveImportStatus(status?: string) {
+  return status === "queued" || status === "processing";
 }

@@ -2,15 +2,12 @@ export type BookFormat = "txt" | "pdf" | "epub" | "image-folder";
 export type ContentType = "novel" | "comic";
 export type PageSpread = "single" | "double";
 export type ReadingDirection = "ltr" | "rtl";
-/** @deprecated Comic images now always fit inside both width and height bounds. */
-export type FitMode = "width" | "height" | "contain";
 
 export interface ReaderPreferences {
   fontSize: number;
   lineHeight: number;
   pageSpread: PageSpread;
   readingDirection: ReadingDirection;
-  fitMode: FitMode;
 }
 
 export interface ReadingProgress {

@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, WheelEvent } from "react";
 import type { BookItem, PageUnit, ReadingProgress } from "../../types";
 
@@ -41,6 +41,70 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
     const spread = pages.slice(currentIndex, currentIndex + spreadSize);
     return book.preferences.readingDirection === "rtl" ? [...spread].reverse() : spread;
   }, [book.preferences.readingDirection, currentIndex, pages, spreadSize]);
+
+  const goNext = useCallback(() => {
+    setCurrentIndex((index) => Math.min(Math.max(0, pages.length - 1), index + spreadSize));
+  }, [pages.length, spreadSize]);
+
+  const goPrevious = useCallback(() => {
+    setCurrentIndex((index) => Math.max(0, index - spreadSize));
+  }, [spreadSize]);
+
+  const openPageJump = useCallback(() => {
+    setJumpValue(String(currentIndex + 1));
+    setIsJumping(true);
+  }, [currentIndex]);
+
+  const applyPageJump = useCallback(() => {
+    const parsed = Number.parseInt(jumpValue, 10);
+    if (Number.isFinite(parsed)) {
+      const nextPage = Math.max(1, Math.min(pages.length, parsed));
+      setCurrentIndex(alignToSpreadStart(nextPage - 1, spreadSize));
+    }
+    setIsJumping(false);
+  }, [jumpValue, pages.length, spreadSize]);
+
+  const handleJumpKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        applyPageJump();
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsJumping(false);
+      }
+    },
+    [applyPageJump]
+  );
+
+  const handleWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (event.ctrlKey || event.metaKey || target.closest("input")) return;
+      if (Math.abs(event.deltaY) < 4 || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+
+      event.preventDefault();
+      wheelDeltaRef.current += event.deltaY;
+      if (Math.abs(wheelDeltaRef.current) < WHEEL_PAGE_THRESHOLD) return;
+
+      const now = Date.now();
+      if (now - lastWheelAtRef.current < WHEEL_COOLDOWN_MS) {
+        wheelDeltaRef.current = 0;
+        return;
+      }
+
+      if (wheelDeltaRef.current > 0) {
+        goNext();
+      } else {
+        goPrevious();
+      }
+      lastWheelAtRef.current = now;
+      wheelDeltaRef.current = 0;
+    },
+    [goNext, goPrevious]
+  );
 
   useEffect(() => {
     setCurrentIndex((index) => alignToSpreadStart(index, spreadSize));
@@ -116,6 +180,8 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement;
+      if (target.closest("input")) return;
       if (event.key === "ArrowRight") {
         book.preferences.readingDirection === "rtl" ? goPrevious() : goNext();
       }
@@ -125,65 +191,7 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  });
-
-  function goNext() {
-    setCurrentIndex((index) => Math.min(Math.max(0, pages.length - 1), index + spreadSize));
-  }
-
-  function goPrevious() {
-    setCurrentIndex((index) => Math.max(0, index - spreadSize));
-  }
-
-  function handleWheel(event: WheelEvent<HTMLDivElement>) {
-    const target = event.target as HTMLElement;
-    if (event.ctrlKey || event.metaKey || target.closest("input")) return;
-    if (Math.abs(event.deltaY) < 4 || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
-
-    event.preventDefault();
-    wheelDeltaRef.current += event.deltaY;
-    if (Math.abs(wheelDeltaRef.current) < WHEEL_PAGE_THRESHOLD) return;
-
-    const now = Date.now();
-    if (now - lastWheelAtRef.current < WHEEL_COOLDOWN_MS) {
-      wheelDeltaRef.current = 0;
-      return;
-    }
-
-    if (wheelDeltaRef.current > 0) {
-      goNext();
-    } else {
-      goPrevious();
-    }
-    lastWheelAtRef.current = now;
-    wheelDeltaRef.current = 0;
-  }
-
-  function openPageJump() {
-    setJumpValue(String(currentIndex + 1));
-    setIsJumping(true);
-  }
-
-  function applyPageJump() {
-    const parsed = Number.parseInt(jumpValue, 10);
-    if (Number.isFinite(parsed)) {
-      const nextPage = Math.max(1, Math.min(pages.length, parsed));
-      setCurrentIndex(alignToSpreadStart(nextPage - 1, spreadSize));
-    }
-    setIsJumping(false);
-  }
-
-  function handleJumpKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      applyPageJump();
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      setIsJumping(false);
-    }
-  }
+  }, [book.preferences.readingDirection, goNext, goPrevious]);
 
   if (error) return <div className="reader-error">{error}</div>;
   if (!pages.length) return <div className="reader-loading">正在读取页面缓存...</div>;

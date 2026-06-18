@@ -171,11 +171,6 @@ function requireBook(id) {
   return book;
 }
 
-function assetToDataUrl(asset) {
-  if (!asset) throw new Error("Asset not found");
-  return `data:${asset.mime};base64,${Buffer.from(asset.data).toString("base64")}`;
-}
-
 ipcMain.handle("library:list", () => repo.listBooks());
 
 ipcMain.handle("dialog:importFiles", async () => {
@@ -228,7 +223,6 @@ ipcMain.handle("library:revealBook", async (_event, id) => {
 
 ipcMain.handle("content:getTextUnits", (_event, id) => repo.getTextUnits(id));
 ipcMain.handle("content:getPageUnits", (_event, id) => repo.getPageUnits(id));
-ipcMain.handle("content:getAssetDataUrl", (_event, assetId) => assetToDataUrl(repo.getAsset(assetId)));
 
 ipcMain.handle("cache:rebuildBook", (_event, id) => {
   requireBook(id);

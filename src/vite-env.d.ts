@@ -14,7 +14,6 @@ declare global {
       getTextUnits: (id: string) => Promise<TextUnit[]>;
       getPageUnits: (id: string) => Promise<PageUnit[]>;
       getAssetUrl: (assetId: number) => string;
-      getAssetDataUrl: (assetId: number) => Promise<string>;
       rebuildBook: (id: string) => Promise<BookItem>;
       cancelImport: (id: string) => Promise<BookItem>;
       getDiagnostics: () => Promise<DiagnosticsSummary>;

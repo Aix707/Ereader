@@ -46,12 +46,58 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
     [book.id, onUpdateBook]
   );
 
+  const clearChromeHideTimer = useCallback(() => {
+    if (chromeTimer.current) {
+      window.clearTimeout(chromeTimer.current);
+      chromeTimer.current = null;
+    }
+  }, []);
+
+  const toggleFullScreen = useCallback(() => {
+    window.ereader.windowControls
+      .toggleFullScreen()
+      .then((state) => setIsFullScreen(state.isFullScreen))
+      .catch(() => undefined);
+  }, []);
+
+  const scheduleChromeHide = useCallback(() => {
+    if (!isFullScreen) return;
+    clearChromeHideTimer();
+    chromeTimer.current = window.setTimeout(() => setChromeVisible(false), 1800);
+  }, [clearChromeHideTimer, isFullScreen]);
+
+  const revealChrome = useCallback(() => {
+    if (!isFullScreen) return;
+    setChromeVisible(true);
+    scheduleChromeHide();
+  }, [isFullScreen, scheduleChromeHide]);
+
+  const updatePreference = useCallback(
+    (preferences: Partial<ReaderPreferences>) => {
+      onUpdateBook(book.id, { preferences }).catch(() => undefined);
+    },
+    [book.id, onUpdateBook]
+  );
+
+  const updateContentType = useCallback(
+    (contentType: ContentType) => {
+      onUpdateBook(book.id, { contentType }).catch(() => undefined);
+    },
+    [book.id, onUpdateBook]
+  );
+
+  const handleToolbarDoubleClick = useCallback((event: MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, .segmented-control, .window-controls")) return;
+    window.ereader.windowControls.toggleMaximize().catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     return () => {
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
-      if (chromeTimer.current) window.clearTimeout(chromeTimer.current);
+      clearChromeHideTimer();
     };
-  }, []);
+  }, [clearChromeHideTimer]);
 
   useEffect(() => {
     let cleanup: () => void = () => undefined;
@@ -74,7 +120,7 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  });
+  }, [isFullScreen, toggleFullScreen]);
 
   useEffect(() => {
     if (!isFullScreen) {
@@ -83,49 +129,12 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
       return;
     }
     revealChrome();
-  }, [isFullScreen]);
-
-  const updatePreference = (preferences: Partial<ReaderPreferences>) => {
-    onUpdateBook(book.id, { preferences }).catch(() => undefined);
-  };
-
-  const updateContentType = (contentType: ContentType) => {
-    onUpdateBook(book.id, { contentType }).catch(() => undefined);
-  };
+  }, [clearChromeHideTimer, isFullScreen, revealChrome]);
 
   const canBeComic = book.format === "pdf" || book.format === "epub" || book.format === "image-folder";
   const isComic = book.contentType === "comic";
   const isReady = book.importStatus === "ready" || !book.importStatus;
   const usePageReader = book.contentType === "comic" || book.format === "pdf" || book.format === "image-folder";
-
-  function handleToolbarDoubleClick(event: MouseEvent<HTMLElement>) {
-    const target = event.target as HTMLElement;
-    if (target.closest("button, .segmented-control, .window-controls")) return;
-    window.ereader.windowControls.toggleMaximize().catch(() => undefined);
-  }
-
-  function clearChromeHideTimer() {
-    if (chromeTimer.current) {
-      window.clearTimeout(chromeTimer.current);
-      chromeTimer.current = null;
-    }
-  }
-
-  function scheduleChromeHide() {
-    if (!isFullScreen) return;
-    clearChromeHideTimer();
-    chromeTimer.current = window.setTimeout(() => setChromeVisible(false), 1800);
-  }
-
-  function revealChrome() {
-    if (!isFullScreen) return;
-    setChromeVisible(true);
-    scheduleChromeHide();
-  }
-
-  function toggleFullScreen() {
-    window.ereader.windowControls.toggleFullScreen().then((state) => setIsFullScreen(state.isFullScreen)).catch(() => undefined);
-  }
 
   return (
     <main

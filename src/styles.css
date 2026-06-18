@@ -763,8 +763,7 @@ input,
   font-size: 13px;
 }
 
-.text-reader-scroll,
-.pdf-document-scroll {
+.text-reader-scroll {
   height: 100%;
   overflow: auto;
 }
@@ -798,20 +797,7 @@ input,
   white-space: pre-wrap;
 }
 
-.pdf-page-stack {
-  display: grid;
-  justify-items: center;
-  gap: 22px;
-  padding: 28px;
-}
-
-.pdf-page-stack .pdf-page-holder {
-  width: min(900px, 100%);
-  min-height: 540px;
-}
-
-.comic-reader,
-.epub-reader {
+.comic-reader {
   position: relative;
   display: grid;
   width: 100%;
@@ -833,7 +819,6 @@ input,
   overflow: hidden;
 }
 
-.pdf-page-holder,
 .image-page-holder {
   display: grid;
   flex: 0 1 auto;
@@ -844,7 +829,6 @@ input,
   place-items: center;
 }
 
-.pdf-page-holder canvas,
 .comic-image {
   border-radius: 4px;
   background: #fff;
@@ -912,28 +896,6 @@ input,
   background: transparent;
 }
 
-.epub-container {
-  width: min(980px, calc(100% - 128px));
-  height: calc(100% - 54px);
-  overflow: hidden;
-  border: 1px solid #ded5c8;
-  border-radius: 8px;
-  background: #fffdf9;
-  box-shadow: 0 24px 70px rgba(78, 66, 48, 0.12);
-}
-
-.comic-epub .epub-container {
-  width: calc(100% - 128px);
-  background: #fdfbf7;
-}
-
-.reader-loading.overlay {
-  position: absolute;
-  z-index: 5;
-  inset: 0;
-  background: rgba(247, 244, 238, 0.8);
-}
-
 .reader-processing {
   display: grid;
   width: min(520px, calc(100% - 48px));
@@ -987,8 +949,7 @@ input,
   box-shadow: 0 16px 40px rgba(50, 43, 33, 0.14);
 }
 
-.text-asset-figure figcaption,
-.inline-image-loading {
+.text-asset-figure figcaption {
   margin-top: 8px;
   color: #81776a;
   font-size: 13px;
