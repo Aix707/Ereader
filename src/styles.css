@@ -689,33 +689,18 @@ button {
   gap: 12px;
   width: calc(100% - 116px);
   height: calc(100% - 56px);
-}
-
-.comic-pages.height {
-  align-items: center;
+  overflow: hidden;
 }
 
 .pdf-page-holder,
 .image-page-holder {
   display: grid;
+  flex: 0 1 auto;
   min-width: 0;
-  height: 100%;
-  place-items: center;
-}
-
-.comic-pages .pdf-page-holder,
-.comic-pages .image-page-holder {
-  flex: 1 1 0;
-  width: 50%;
-  max-width: 50%;
-  min-width: 0;
-}
-
-.comic-pages .pdf-page-holder:only-child,
-.comic-pages .image-page-holder:only-child {
-  flex-basis: 100%;
-  width: 100%;
+  min-height: 0;
   max-width: 100%;
+  max-height: 100%;
+  place-items: center;
 }
 
 .pdf-page-holder canvas,
@@ -727,20 +712,8 @@ button {
 
 .comic-image {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.comic-image.width {
   width: 100%;
-  height: auto;
-}
-
-.comic-image.height {
-  width: auto;
   height: 100%;
-  max-width: 100%;
   object-fit: contain;
 }
 

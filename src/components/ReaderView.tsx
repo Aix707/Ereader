@@ -4,7 +4,6 @@ import {
   Columns2,
   FileText,
   Image,
-  Maximize2,
   Minus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -14,7 +13,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageFlowReader } from "./readers/PageFlowReader";
 import { TextFlowReader } from "./readers/TextFlowReader";
-import type { BookItem, BookPatch, ContentType, FitMode, PageSpread, ReaderPreferences, ReadingDirection, ReadingProgress } from "../types";
+import type { BookItem, BookPatch, ContentType, PageSpread, ReaderPreferences, ReadingDirection, ReadingProgress } from "../types";
 import { formatPercent, labelForContentType, labelForFormat } from "../lib/format";
 
 interface ReaderViewProps {
@@ -103,14 +102,6 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
                   { value: "rtl", label: "右到左", icon: <Columns2 size={15} /> }
                 ]}
                 onChange={(value) => updatePreference({ readingDirection: value as ReadingDirection })}
-              />
-              <SegmentedControl
-                value={book.preferences.fitMode}
-                options={[
-                  { value: "width", label: "适宽", icon: <Maximize2 size={15} /> },
-                  { value: "height", label: "适高", icon: <Maximize2 size={15} /> }
-                ]}
-                onChange={(value) => updatePreference({ fitMode: value as FitMode })}
               />
             </>
           )}

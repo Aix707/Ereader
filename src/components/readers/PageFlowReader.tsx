@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BookItem, PageUnit, ReadingProgress } from "../../types";
 
 interface PageFlowReaderProps {
@@ -8,10 +8,14 @@ interface PageFlowReaderProps {
   onProgressLabel: (label: string) => void;
 }
 
+const PAGE_GAP = 12;
+
 export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowReaderProps) {
   const [pages, setPages] = useState<PageUnit[]>([]);
   const [currentIndex, setCurrentIndex] = useState(Math.max(0, (book.progress.page || 1) - 1));
   const [error, setError] = useState<string | null>(null);
+  const pagesRef = useRef<HTMLDivElement | null>(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     setError(null);
@@ -27,6 +31,41 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
     const spread = pages.slice(currentIndex, currentIndex + spreadSize);
     return book.preferences.readingDirection === "rtl" ? [...spread].reverse() : spread;
   }, [book.preferences.readingDirection, currentIndex, pages, spreadSize]);
+
+  useEffect(() => {
+    const element = pagesRef.current;
+    if (!element) return;
+
+    let animationFrame = 0;
+    const measure = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        setStageSize({
+          width: element.clientWidth,
+          height: element.clientHeight
+        });
+      });
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [pages.length]);
+
+  const pageBounds = useMemo(() => {
+    const columns = visiblePages.length > 1 ? 2 : 1;
+    return {
+      width: Math.max(0, (stageSize.width - PAGE_GAP * (columns - 1)) / columns),
+      height: stageSize.height
+    };
+  }, [stageSize.height, stageSize.width, visiblePages.length]);
 
   useEffect(() => {
     if (!pages.length) return;
@@ -65,9 +104,9 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
       <button className="page-turn left" onClick={goPrevious} disabled={currentIndex <= 0}>
         <ChevronLeft size={22} />
       </button>
-      <div className={`comic-pages ${book.preferences.fitMode}`}>
+      <div ref={pagesRef} className={`comic-pages ${visiblePages.length > 1 ? "double-spread" : "single-spread"}`}>
         {visiblePages.map((page) => (
-          <PageImage key={page.id} page={page} fitMode={book.preferences.fitMode} />
+          <PageImage key={page.id} page={page} maxWidth={pageBounds.width} maxHeight={pageBounds.height} />
         ))}
       </div>
       <button className="page-turn right" onClick={goNext} disabled={currentIndex >= pages.length - 1}>
@@ -80,8 +119,12 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
   );
 }
 
-function PageImage({ page, fitMode }: { page: PageUnit; fitMode: string }) {
+function PageImage({ page, maxWidth, maxHeight }: { page: PageUnit; maxWidth: number; maxHeight: number }) {
   const [src, setSrc] = useState("");
+  const displaySize = useMemo(
+    () => getContainedSize(page.width, page.height, maxWidth, maxHeight),
+    [maxHeight, maxWidth, page.height, page.width]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -95,10 +138,17 @@ function PageImage({ page, fitMode }: { page: PageUnit; fitMode: string }) {
   }, [page.assetId]);
 
   return (
-    <div className="image-page-holder">
-      {src ? (
+    <div
+      className="image-page-holder"
+      style={{
+        width: displaySize ? `${displaySize.width}px` : undefined,
+        height: displaySize ? `${displaySize.height}px` : undefined,
+        aspectRatio: page.width && page.height ? `${page.width} / ${page.height}` : undefined
+      }}
+    >
+      {src && displaySize ? (
         <img
-          className={`comic-image ${fitMode}`}
+          className="comic-image"
           src={src}
           alt={page.title || `Page ${page.unitIndex + 1}`}
           width={page.width || undefined}
@@ -109,4 +159,13 @@ function PageImage({ page, fitMode }: { page: PageUnit; fitMode: string }) {
       )}
     </div>
   );
+}
+
+function getContainedSize(sourceWidth: number, sourceHeight: number, maxWidth: number, maxHeight: number) {
+  if (sourceWidth <= 0 || sourceHeight <= 0 || maxWidth <= 0 || maxHeight <= 0) return null;
+  const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
+  return {
+    width: Math.max(1, Math.floor(sourceWidth * scale)),
+    height: Math.max(1, Math.floor(sourceHeight * scale))
+  };
 }
