@@ -272,9 +272,10 @@ function SegmentedControl({
           key={option.value}
           className={option.value === value ? "active" : ""}
           onClick={() => onChange(option.value)}
+          title={option.label}
+          aria-label={option.label}
         >
           {option.icon}
-          <span className="segmented-label">{option.label}</span>
         </button>
       ))}
     </div>

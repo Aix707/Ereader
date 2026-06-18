@@ -9,8 +9,6 @@ import {
   Images,
   Import,
   Library,
-  List,
-  MoreHorizontal,
   Play,
   RefreshCw,
   Search,
@@ -24,7 +22,6 @@ import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat 
 import { WindowControls } from "./WindowControls";
 
 type FilterKey = "all" | "recent" | "novel" | "comic";
-type ViewMode = "grid" | "list";
 
 interface LibraryViewProps {
   store: LibraryStore;
@@ -57,7 +54,6 @@ export function LibraryView({
 }: LibraryViewProps) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [isDragActive, setIsDragActive] = useState(false);
   const dragDepth = useRef(0);
 
@@ -210,23 +206,6 @@ export function LibraryView({
               </button>
             )}
 
-            <div className="view-toggle" aria-label="书架视图">
-              <button
-                className={viewMode === "grid" ? "active" : ""}
-                onClick={() => setViewMode("grid")}
-                title="封面网格"
-              >
-                <Library size={16} />
-              </button>
-              <button
-                className={viewMode === "list" ? "active" : ""}
-                onClick={() => setViewMode("list")}
-                title="紧凑列表"
-              >
-                <List size={16} />
-              </button>
-            </div>
-
             <div className="search-box">
               <Search size={17} />
               <input
@@ -273,7 +252,7 @@ export function LibraryView({
             </div>
           </div>
         ) : (
-          <div className={`book-grid ${viewMode === "list" ? "list-mode" : "grid-mode"}`}>
+          <div className="book-grid">
             {books.map((book) => (
               <BookCard
                 key={book.id}
@@ -374,26 +353,23 @@ function BookCard({
         )}
         {canToggleContent && (
           <button
-            className="icon-text-button"
+            className="icon-button"
             onClick={() =>
               onUpdateBook({ contentType: book.contentType === "novel" ? "comic" : "novel" })
             }
-            title="切换小说/漫画模式"
+            title={book.contentType === "novel" ? "切换为漫画模式" : "切换为小说模式"}
           >
-            <MoreHorizontal size={16} />
-            {book.contentType === "novel" ? "转漫画" : "转小说"}
+            {book.contentType === "novel" ? <Images size={16} /> : <FileText size={16} />}
           </button>
         )}
         {(importStatus === "queued" || importStatus === "processing") && (
-          <button className="icon-text-button" onClick={onCancelImport} title="取消导入">
+          <button className="icon-button" onClick={onCancelImport} title="取消导入">
             <CircleStop size={16} />
-            取消
           </button>
         )}
         {(importStatus === "error" || importStatus === "stale" || importStatus === "cancelled") && (
-          <button className="icon-text-button" onClick={onRebuild} title="重建数据库内容">
+          <button className="icon-button" onClick={onRebuild} title="重建数据库内容">
             <RefreshCw size={16} />
-            重建
           </button>
         )}
         <button className="icon-button" onClick={onRemove} title="从书库移除">
