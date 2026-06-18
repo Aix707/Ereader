@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("ereader", {
   listLibrary: () => ipcRenderer.invoke("library:list"),
   importFiles: () => ipcRenderer.invoke("dialog:importFiles"),
   importFolder: () => ipcRenderer.invoke("dialog:importFolder"),
+  importDroppedPaths: (paths) => ipcRenderer.invoke("dialog:importDroppedPaths", paths),
   updateBook: (id, patch) => ipcRenderer.invoke("library:updateBook", id, patch),
   removeBook: (id) => ipcRenderer.invoke("library:removeBook", id),
   revealBook: (id) => ipcRenderer.invoke("library:revealBook", id),

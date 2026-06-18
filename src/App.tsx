@@ -62,6 +62,12 @@ export function App() {
     setStore(await window.ereader.importFolder());
   }
 
+  async function importDroppedPaths(paths: string[]) {
+    setError(null);
+    if (paths.length === 0) return;
+    setStore(await window.ereader.importDroppedPaths(paths));
+  }
+
   async function updateBook(id: string, patch: Parameters<typeof window.ereader.updateBook>[1]) {
     const updated = await window.ereader.updateBook(id, patch);
     setStore((current) => ({
@@ -123,6 +129,7 @@ export function App() {
       error={error}
       onImportFiles={importFiles}
       onImportFolder={importFolder}
+      onImportDroppedPaths={importDroppedPaths}
       onOpenBook={openBook}
       onRemoveBook={removeBook}
       onUpdateBook={updateBook}

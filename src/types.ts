@@ -27,6 +27,10 @@ export interface BookItem {
   kind: "file" | "folder";
   format: BookFormat;
   contentType: ContentType;
+  coverAssetId?: number | null;
+  coverWidth?: number | null;
+  coverHeight?: number | null;
+  coverKind?: "asset" | "generated";
   addedAt: string;
   updatedAt?: string;
   lastOpenedAt?: string | null;

@@ -189,6 +189,18 @@ function createRepository(userDataPath) {
     bookById: db.prepare("SELECT * FROM books WHERE id = ?"),
     prefsById: db.prepare("SELECT * FROM preferences WHERE book_id = ?"),
     progressById: db.prepare("SELECT * FROM progress WHERE book_id = ?"),
+    coverById: db.prepare(
+      `SELECT a.id AS coverAssetId, a.width AS coverWidth, a.height AS coverHeight
+       FROM reading_units ru
+       JOIN assets a ON a.id = ru.asset_id
+       WHERE ru.book_id = ?
+         AND ru.asset_id IS NOT NULL
+         AND ru.unit_type IN ('page', 'image')
+       ORDER BY
+         CASE ru.unit_type WHEN 'page' THEN 0 WHEN 'image' THEN 1 ELSE 2 END,
+         ru.unit_index
+       LIMIT 1`
+    ),
     insertDiagnostic: db.prepare(
       "INSERT INTO diagnostics (book_id, level, message, details_json, created_at) VALUES (?, ?, ?, ?, ?)"
     ),
@@ -209,6 +221,7 @@ function createRepository(userDataPath) {
   function rowToBook(row) {
     const prefs = normalizePrefs(statements.prefsById.get(row.id) || {});
     const progress = normalizeProgress(statements.progressById.get(row.id) || {});
+    const cover = statements.coverById.get(row.id);
     const stats = sourceStats(row.source_path, row.source_kind);
     const stale =
       row.import_status === "ready" &&
@@ -223,6 +236,10 @@ function createRepository(userDataPath) {
       kind: row.source_kind,
       format: row.source_format,
       contentType: row.content_type,
+      coverAssetId: cover?.coverAssetId || null,
+      coverWidth: cover?.coverWidth || null,
+      coverHeight: cover?.coverHeight || null,
+      coverKind: cover ? "asset" : "generated",
       addedAt: row.added_at,
       updatedAt: row.updated_at,
       lastOpenedAt: row.last_opened_at,

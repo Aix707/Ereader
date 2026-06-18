@@ -9,17 +9,22 @@ import {
   Images,
   Import,
   Library,
+  List,
   MoreHorizontal,
+  Play,
+  RefreshCw,
   Search,
-  Trash2
+  Trash2,
+  X
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import type { MouseEvent } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { DragEvent, MouseEvent } from "react";
 import type { BookItem, BookPatch, LibraryStore } from "../types";
 import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat } from "../lib/format";
 import { WindowControls } from "./WindowControls";
 
 type FilterKey = "all" | "recent" | "novel" | "comic";
+type ViewMode = "grid" | "list";
 
 interface LibraryViewProps {
   store: LibraryStore;
@@ -27,6 +32,7 @@ interface LibraryViewProps {
   error: string | null;
   onImportFiles: () => Promise<void>;
   onImportFolder: () => Promise<void>;
+  onImportDroppedPaths: (paths: string[]) => Promise<void>;
   onOpenBook: (book: BookItem) => void;
   onRemoveBook: (id: string) => Promise<void>;
   onUpdateBook: (id: string, patch: BookPatch) => Promise<BookItem>;
@@ -41,6 +47,7 @@ export function LibraryView({
   error,
   onImportFiles,
   onImportFolder,
+  onImportDroppedPaths,
   onOpenBook,
   onRemoveBook,
   onUpdateBook,
@@ -50,6 +57,9 @@ export function LibraryView({
 }: LibraryViewProps) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [isDragActive, setIsDragActive] = useState(false);
+  const dragDepth = useRef(0);
 
   const books = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -71,9 +81,17 @@ export function LibraryView({
       });
   }, [filter, query, store.books]);
 
+  const readyBooks = store.books.filter((book) => isReady(book)).length;
   const recent = store.books.filter((book) => book.lastOpenedAt).length;
   const novels = store.books.filter((book) => book.contentType === "novel").length;
   const comics = store.books.filter((book) => book.contentType === "comic").length;
+  const continueBook = useMemo(
+    () =>
+      [...store.books]
+        .filter((book) => isReady(book) && book.lastOpenedAt)
+        .sort((a, b) => new Date(b.lastOpenedAt || 0).getTime() - new Date(a.lastOpenedAt || 0).getTime())[0] || null,
+    [store.books]
+  );
 
   function handleTitlebarDoubleClick(event: MouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement;
@@ -81,8 +99,45 @@ export function LibraryView({
     window.ereader.windowControls.toggleMaximize().catch(() => undefined);
   }
 
+  function handleDragEnter(event: DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    dragDepth.current += 1;
+    setIsDragActive(true);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setIsDragActive(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setIsDragActive(false);
+    const paths = Array.from(event.dataTransfer.files)
+      .map((file) => (file as File & { path?: string }).path)
+      .filter((path): path is string => Boolean(path));
+    onImportDroppedPaths(paths).catch(() => undefined);
+  }
+
   return (
-    <main className="app-shell">
+    <main
+      className={`app-shell${isDragActive ? " drag-active" : ""}`}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <header className="app-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
         <div className="app-titlebar-brand">
           <BookOpen size={15} />
@@ -90,6 +145,7 @@ export function LibraryView({
         </div>
         <WindowControls />
       </header>
+
       <aside className="library-sidebar">
         <div className="brand-block">
           <div className="brand-mark">
@@ -134,17 +190,56 @@ export function LibraryView({
 
       <section className="library-main">
         <header className="library-header">
-          <div>
+          <div className="library-heading">
             <p className="eyebrow">Library</p>
             <h2>阅读书架</h2>
+            <div className="library-stats" aria-label="书库统计">
+              <span>{store.books.length} 本</span>
+              <span>{readyBooks} 就绪</span>
+              <span>{comics} 漫画</span>
+              <span>{novels} 小说</span>
+            </div>
           </div>
-          <div className="search-box">
-            <Search size={17} />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索标题或路径"
-            />
+
+          <div className="library-command-bar">
+            {continueBook && (
+              <button className="continue-action" onClick={() => onOpenBook(continueBook)}>
+                <Play size={16} />
+                继续阅读
+                <span>{continueBook.title}</span>
+              </button>
+            )}
+
+            <div className="view-toggle" aria-label="书架视图">
+              <button
+                className={viewMode === "grid" ? "active" : ""}
+                onClick={() => setViewMode("grid")}
+                title="封面网格"
+              >
+                <Library size={16} />
+              </button>
+              <button
+                className={viewMode === "list" ? "active" : ""}
+                onClick={() => setViewMode("list")}
+                title="紧凑列表"
+              >
+                <List size={16} />
+              </button>
+            </div>
+
+            <div className="search-box">
+              <Search size={17} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={store.books.length ? "搜索标题或路径" : "导入后可搜索书库"}
+              />
+              {query && (
+                <button className="search-clear" onClick={() => setQuery("")} title="清除搜索">
+                  <X size={15} />
+                </button>
+              )}
+            </div>
           </div>
         </header>
 
@@ -155,21 +250,30 @@ export function LibraryView({
         ) : books.length === 0 ? (
           <div className="empty-state">
             <FileArchive size={34} />
-            <h3>还没有可阅读内容</h3>
-            <p>导入 txt、pdf、epub，或选择一个漫画图片文件夹开始。</p>
+            <h3>{query ? "没有匹配的书籍" : "还没有可阅读内容"}</h3>
+            <p>{query ? "换一个关键词，或清除搜索查看全部书籍。" : "导入 txt、pdf、epub，或选择一个漫画图片文件夹开始。"}</p>
             <div className="empty-actions">
-              <button className="primary-action" onClick={onImportFiles}>
-                <Import size={17} />
-                导入文件
-              </button>
-              <button className="secondary-action" onClick={onImportFolder}>
-                <FolderOpen size={17} />
-                导入文件夹
-              </button>
+              {query ? (
+                <button className="secondary-action" onClick={() => setQuery("")}>
+                  <X size={17} />
+                  清除搜索
+                </button>
+              ) : (
+                <>
+                  <button className="primary-action" onClick={onImportFiles}>
+                    <Import size={17} />
+                    导入文件
+                  </button>
+                  <button className="secondary-action" onClick={onImportFolder}>
+                    <FolderOpen size={17} />
+                    导入文件夹
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ) : (
-          <div className="book-grid">
+          <div className={`book-grid ${viewMode === "list" ? "list-mode" : "grid-mode"}`}>
             {books.map((book) => (
               <BookCard
                 key={book.id}
@@ -181,6 +285,14 @@ export function LibraryView({
                 onCancelImport={() => onCancelImport(book.id)}
               />
             ))}
+          </div>
+        )}
+
+        {isDragActive && (
+          <div className="drag-import-overlay">
+            <Import size={28} />
+            <strong>释放以导入</strong>
+            <span>支持 txt、pdf、epub 和图片文件夹</span>
           </div>
         )}
       </section>
@@ -222,23 +334,26 @@ function BookCard({
   onRebuild: () => Promise<void>;
   onCancelImport: () => Promise<void>;
 }) {
-  const icon = book.format === "image-folder" ? <Images size={24} /> : <BookOpen size={24} />;
   const progress = formatPercent(book.progress.percent || 0);
+  const progressValue = Math.round(Math.max(0, Math.min(1, book.progress.percent || 0)) * 100);
   const importStatus = book.importStatus || "ready";
-  const canOpen = importStatus === "ready";
+  const canOpen = isReady(book);
+  const canToggleContent = book.format === "pdf" || book.format === "epub";
 
   return (
-    <article className="book-card">
+    <article className={`book-card ${importStatus !== "ready" ? "has-import-state" : ""}`}>
       <button className="book-open-area" onClick={onOpen} disabled={!canOpen}>
-        <div className={`book-cover ${book.contentType}`}>
-          {icon}
-          <span>{labelForFormat(book.format)}</span>
-        </div>
+        <BookCover book={book} progressValue={progressValue} />
         <div className="book-meta">
           <div className="book-title-row">
             <h3 title={book.title}>{book.title}</h3>
           </div>
           <p title={book.path}>{book.path}</p>
+          <div className="book-badges">
+            <span className="pill">{labelForContentType(book.contentType)}</span>
+            <span className={`status-pill ${importStatus}`}>{statusLabel(importStatus)}</span>
+            <span className="progress-text">{book.unitCount || 0} 单元 · {progress}</span>
+          </div>
           {importStatus !== "ready" && (
             <div className="card-import-status">
               <span>{statusLabel(importStatus)}</span>
@@ -250,46 +365,68 @@ function BookCard({
           {book.importError && <p className="card-error">{book.importError}</p>}
         </div>
       </button>
-      <div className="book-footer">
-        <div>
-          <span className="pill">{labelForContentType(book.contentType)}</span>
-          <span className={`status-pill ${importStatus}`}>{statusLabel(importStatus)}</span>
-          <span className="progress-text">{book.unitCount || 0} 单元 · {progress}</span>
-        </div>
-        <div className="card-actions">
-          {(book.format === "pdf" || book.format === "epub") && (
-            <button
-              className="icon-text-button"
-              onClick={() =>
-                onUpdateBook({ contentType: book.contentType === "novel" ? "comic" : "novel" })
-              }
-              title="切换小说/漫画模式"
-            >
-              <MoreHorizontal size={16} />
-              {book.contentType === "novel" ? "转漫画" : "转小说"}
-            </button>
-          )}
-          {(importStatus === "queued" || importStatus === "processing") && (
-            <button className="icon-text-button" onClick={onCancelImport} title="取消导入">
-              <CircleStop size={16} />
-              取消
-            </button>
-          )}
-          {(importStatus === "error" || importStatus === "stale" || importStatus === "cancelled") && (
-            <button className="icon-text-button" onClick={onRebuild} title="重建数据库内容">
-              <Import size={16} />
-              重建
-            </button>
-          )}
-          <button className="icon-button" onClick={onRemove} title="从书库移除">
-            <Trash2 size={16} />
+
+      <div className="book-card-actions" aria-label={`${book.title} 操作`}>
+        {canOpen && (
+          <button className="icon-button primary-icon" onClick={onOpen} title="继续阅读">
+            <Play size={16} />
           </button>
-        </div>
+        )}
+        {canToggleContent && (
+          <button
+            className="icon-text-button"
+            onClick={() =>
+              onUpdateBook({ contentType: book.contentType === "novel" ? "comic" : "novel" })
+            }
+            title="切换小说/漫画模式"
+          >
+            <MoreHorizontal size={16} />
+            {book.contentType === "novel" ? "转漫画" : "转小说"}
+          </button>
+        )}
+        {(importStatus === "queued" || importStatus === "processing") && (
+          <button className="icon-text-button" onClick={onCancelImport} title="取消导入">
+            <CircleStop size={16} />
+            取消
+          </button>
+        )}
+        {(importStatus === "error" || importStatus === "stale" || importStatus === "cancelled") && (
+          <button className="icon-text-button" onClick={onRebuild} title="重建数据库内容">
+            <RefreshCw size={16} />
+            重建
+          </button>
+        )}
+        <button className="icon-button" onClick={onRemove} title="从书库移除">
+          <Trash2 size={16} />
+        </button>
       </div>
+
       <div className="book-subline">
         <span>{book.lastOpenedAt ? `最近 ${formatRelativeDate(book.lastOpenedAt)}` : "尚未阅读"}</span>
+        <span>{labelForFormat(book.format)}</span>
       </div>
     </article>
+  );
+}
+
+function BookCover({ book, progressValue }: { book: BookItem; progressValue: number }) {
+  const assetUrl = book.coverAssetId ? window.ereader.getAssetUrl(book.coverAssetId) : null;
+
+  return (
+    <div className={`book-cover ${book.contentType} ${assetUrl ? "asset-cover" : "generated-cover"}`}>
+      {assetUrl ? (
+        <img src={assetUrl} alt={`${book.title} 封面`} loading="lazy" />
+      ) : (
+        <div className="generated-cover-content">
+          <span className="generated-cover-mark">{titleMark(book.title)}</span>
+          <strong>{book.title}</strong>
+          <small>{labelForFormat(book.format)}</small>
+        </div>
+      )}
+      <div className="cover-progress" aria-hidden="true">
+        <i style={{ width: `${progressValue}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -301,4 +438,17 @@ function statusLabel(status: string) {
   if (status === "stale") return "需重建";
   if (status === "cancelled") return "已取消";
   return status;
+}
+
+function isReady(book: BookItem) {
+  return book.importStatus === "ready" || !book.importStatus;
+}
+
+function hasDraggedFiles(event: DragEvent<HTMLElement>) {
+  return Array.from(event.dataTransfer.types).includes("Files");
+}
+
+function titleMark(title: string) {
+  const compact = title.trim().replace(/\s+/g, "");
+  return Array.from(compact || "书").slice(0, 2).join("");
 }

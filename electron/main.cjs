@@ -35,7 +35,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 660,
     frame: false,
-    backgroundColor: "#f7f4ee",
+    backgroundColor: "#eef4fb",
     title: "Ereader",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -165,6 +165,29 @@ function scanFolderForBooks(folderPath) {
   return books;
 }
 
+function importPaths(rawPaths) {
+  const imported = [];
+  const seen = new Set();
+  for (const rawPath of Array.isArray(rawPaths) ? rawPaths : []) {
+    if (typeof rawPath !== "string" || rawPath.trim() === "") continue;
+    const absPath = path.resolve(rawPath);
+    const key = path.normalize(absPath).toLowerCase();
+    if (seen.has(key) || !fs.existsSync(absPath)) continue;
+    seen.add(key);
+
+    const stat = fs.statSync(absPath);
+    if (stat.isDirectory()) {
+      imported.push(...scanFolderForBooks(absPath));
+      continue;
+    }
+    if (!stat.isFile()) continue;
+    const format = inferFileFormat(absPath);
+    if (format) imported.push(makeBook(absPath, "file", format));
+  }
+  for (const book of imported) importer.enqueue(book.id);
+  return repo.listBooks();
+}
+
 function requireBook(id) {
   const book = repo.getBook(id);
   if (!book) throw new Error("Book not found");
@@ -203,6 +226,8 @@ ipcMain.handle("dialog:importFolder", async () => {
   for (const book of imported) importer.enqueue(book.id);
   return repo.listBooks();
 });
+
+ipcMain.handle("dialog:importDroppedPaths", (_event, paths) => importPaths(paths));
 
 ipcMain.handle("library:updateBook", (_event, id, patch) => {
   const updated = repo.updateBook(id, patch || {});

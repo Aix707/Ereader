@@ -8,6 +8,7 @@ declare global {
       listLibrary: () => Promise<LibraryStore>;
       importFiles: () => Promise<LibraryStore>;
       importFolder: () => Promise<LibraryStore>;
+      importDroppedPaths: (paths: string[]) => Promise<LibraryStore>;
       updateBook: (id: string, patch: BookPatch) => Promise<BookItem>;
       removeBook: (id: string) => Promise<LibraryStore>;
       revealBook: (id: string) => Promise<void>;
