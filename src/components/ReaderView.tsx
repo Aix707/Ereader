@@ -1,0 +1,195 @@
+import {
+  ArrowLeft,
+  BookOpen,
+  Columns2,
+  FileText,
+  Image,
+  Maximize2,
+  Minus,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Rows3
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { PageFlowReader } from "./readers/PageFlowReader";
+import { TextFlowReader } from "./readers/TextFlowReader";
+import type { BookItem, BookPatch, ContentType, FitMode, PageSpread, ReaderPreferences, ReadingDirection, ReadingProgress } from "../types";
+import { formatPercent, labelForContentType, labelForFormat } from "../lib/format";
+
+interface ReaderViewProps {
+  book: BookItem;
+  onBack: () => void;
+  onUpdateBook: (id: string, patch: BookPatch) => Promise<BookItem>;
+}
+
+export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
+  const [progressLabel, setProgressLabel] = useState(formatPercent(book.progress.percent || 0));
+  const saveTimer = useRef<number | null>(null);
+
+  const saveProgress = useCallback(
+    (progress: Partial<ReadingProgress>) => {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(() => {
+        onUpdateBook(book.id, {
+          progress,
+          lastOpenedAt: new Date().toISOString()
+        }).catch(() => undefined);
+      }, 350);
+    },
+    [book.id, onUpdateBook]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    };
+  }, []);
+
+  const updatePreference = (preferences: Partial<ReaderPreferences>) => {
+    onUpdateBook(book.id, { preferences }).catch(() => undefined);
+  };
+
+  const updateContentType = (contentType: ContentType) => {
+    onUpdateBook(book.id, { contentType }).catch(() => undefined);
+  };
+
+  const canBeComic = book.format === "pdf" || book.format === "epub" || book.format === "image-folder";
+  const isComic = book.contentType === "comic";
+  const isReady = book.importStatus === "ready" || !book.importStatus;
+  const usePageReader = book.contentType === "comic" || book.format === "pdf" || book.format === "image-folder";
+
+  return (
+    <main className="reader-shell">
+      <header className="reader-toolbar">
+        <div className="reader-left-tools">
+          <button className="toolbar-button" onClick={onBack} title="返回书架">
+            <ArrowLeft size={18} />
+          </button>
+          <div className="reader-title">
+            <h1>{book.title}</h1>
+            <span>
+              {labelForFormat(book.format)} · {labelForContentType(book.contentType)} · {progressLabel}
+            </span>
+          </div>
+        </div>
+
+        <div className="reader-tools">
+          {canBeComic && (
+            <SegmentedControl
+              value={book.contentType}
+              options={[
+                { value: "novel", label: "小说", icon: <FileText size={15} /> },
+                { value: "comic", label: "漫画", icon: <Image size={15} /> }
+              ]}
+              onChange={(value) => updateContentType(value as ContentType)}
+            />
+          )}
+
+          {isComic && (
+            <>
+              <SegmentedControl
+                value={book.preferences.pageSpread}
+                options={[
+                  { value: "single", label: "单页", icon: <PanelLeftClose size={15} /> },
+                  { value: "double", label: "双页", icon: <PanelLeftOpen size={15} /> }
+                ]}
+                onChange={(value) => updatePreference({ pageSpread: value as PageSpread })}
+              />
+              <SegmentedControl
+                value={book.preferences.readingDirection}
+                options={[
+                  { value: "ltr", label: "左到右", icon: <Rows3 size={15} /> },
+                  { value: "rtl", label: "右到左", icon: <Columns2 size={15} /> }
+                ]}
+                onChange={(value) => updatePreference({ readingDirection: value as ReadingDirection })}
+              />
+              <SegmentedControl
+                value={book.preferences.fitMode}
+                options={[
+                  { value: "width", label: "适宽", icon: <Maximize2 size={15} /> },
+                  { value: "height", label: "适高", icon: <Maximize2 size={15} /> }
+                ]}
+                onChange={(value) => updatePreference({ fitMode: value as FitMode })}
+              />
+            </>
+          )}
+
+          {!isComic && (
+            <div className="size-tools">
+              <button
+                className="toolbar-button"
+                onClick={() => updatePreference({ fontSize: Math.max(14, book.preferences.fontSize - 1) })}
+                title="减小字号"
+              >
+                <Minus size={16} />
+              </button>
+              <span>{book.preferences.fontSize}px</span>
+              <button
+                className="toolbar-button"
+                onClick={() => updatePreference({ fontSize: Math.min(28, book.preferences.fontSize + 1) })}
+                title="增大字号"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      <section className="reader-stage">
+        {!isReady ? (
+          <div className="reader-processing">
+            <h2>{book.importStatus === "error" ? "处理失败" : "正在处理导入内容"}</h2>
+            <p>{book.importError || "导入内容会写入 SQLite 数据库，完成后即可阅读。"}</p>
+            <div className="processing-meter">
+              <span style={{ width: `${Math.round((book.importProgress || 0) * 100)}%` }} />
+            </div>
+          </div>
+        ) : usePageReader ? (
+          <PageFlowReader
+            book={book}
+            onProgress={saveProgress}
+            onProgressLabel={setProgressLabel}
+          />
+        ) : (
+          <TextFlowReader
+            book={book}
+            onProgress={saveProgress}
+            onProgressLabel={setProgressLabel}
+          />
+        )}
+      </section>
+
+      <footer className="reader-status">
+        <BookOpen size={15} />
+        <span>{book.path}</span>
+      </footer>
+    </main>
+  );
+}
+
+function SegmentedControl({
+  value,
+  options,
+  onChange
+}: {
+  value: string;
+  options: Array<{ value: string; label: string; icon: React.ReactNode }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="segmented-control">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          className={option.value === value ? "active" : ""}
+          onClick={() => onChange(option.value)}
+        >
+          {option.icon}
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}

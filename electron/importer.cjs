@@ -1,0 +1,387 @@
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const chardet = require("chardet");
+const iconv = require("iconv-lite");
+const sharp = require("sharp");
+const sanitizeHtml = require("sanitize-html");
+const { parse } = require("node-html-parser");
+const { XMLParser } = require("fast-xml-parser");
+const {
+  BlobReader,
+  TextWriter,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipReader
+} = require("@zip.js/zip.js");
+const { createCanvas } = require("@napi-rs/canvas");
+
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".avif", ".tif", ".tiff"]);
+const PDF_MAX_LONG_EDGE = 2800;
+const IMAGE_MAX_LONG_EDGE = 3200;
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function naturalSort(values) {
+  const collator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
+  return [...values].sort((a, b) => collator.compare(path.basename(a), path.basename(b)));
+}
+
+function isImage(filePath) {
+  return IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function arrayify(value) {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function decodeText(filePath) {
+  const buffer = fs.readFileSync(filePath);
+  const detected = chardet.detect(buffer) || "utf-8";
+  const normalized = String(detected)
+    .replace(/^UTF-8$/i, "utf8")
+    .replace(/^UTF-16LE$/i, "utf16-le")
+    .replace(/^GB2312$/i, "gb18030")
+    .replace(/^GBK$/i, "gb18030");
+  const encoding = iconv.encodingExists(normalized) ? normalized : "utf8";
+  return {
+    text: iconv.decode(buffer, encoding).replace(/^\uFEFF/, ""),
+    encoding
+  };
+}
+
+function imageFilesInFolder(folderPath) {
+  const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+  return naturalSort(
+    entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.join(folderPath, entry.name))
+      .filter(isImage)
+  );
+}
+
+async function normalizeImage(input, sourceRef, maxLongEdge = IMAGE_MAX_LONG_EDGE) {
+  const pipeline = sharp(input, { animated: false })
+    .rotate()
+    .resize({
+      width: maxLongEdge,
+      height: maxLongEdge,
+      fit: "inside",
+      withoutEnlargement: true
+    })
+    .webp({ quality: 92, effort: 4 });
+  const { data, info } = await pipeline.toBuffer({ resolveWithObject: true });
+  return {
+    data,
+    mime: "image/webp",
+    width: info.width,
+    height: info.height,
+    sourceRef
+  };
+}
+
+function chapterPattern(text) {
+  return /^(第[一二三四五六七八九十百千万零〇\d]+[章节卷回部篇].{0,60}|chapter\s+\d+.{0,60}|\d{1,4}[.、]\s*.{1,60})$/i.test(
+    text.trim()
+  );
+}
+
+function cleanText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeZipPath(value) {
+  return String(value || "").replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function resolveZipHref(baseFile, href) {
+  const cleanHref = decodeURIComponent(String(href || "").split("#")[0]).replace(/\\/g, "/");
+  return path.posix.normalize(path.posix.join(path.posix.dirname(baseFile), cleanHref));
+}
+
+function getAttr(node, names) {
+  for (const name of names) {
+    const value = node.getAttribute?.(name);
+    if (value) return value;
+  }
+  return null;
+}
+
+async function readZipEntries(filePath) {
+  const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(fs.readFileSync(filePath))));
+  const entries = await reader.getEntries();
+  const map = new Map(entries.map((entry) => [normalizeZipPath(entry.filename), entry]));
+  async function text(name) {
+    const entry = map.get(normalizeZipPath(name));
+    if (!entry) throw new Error(`Missing EPUB entry: ${name}`);
+    return entry.getData(new TextWriter());
+  }
+  async function bytes(name) {
+    const entry = map.get(normalizeZipPath(name));
+    if (!entry) throw new Error(`Missing EPUB entry: ${name}`);
+    const data = await entry.getData(new Uint8ArrayWriter());
+    return Buffer.from(data);
+  }
+  return { reader, map, text, bytes };
+}
+
+async function processTxt(repo, book, renditionId, notify) {
+  const { text, encoding } = decodeText(book.source_path);
+  const paragraphs = text
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  let index = 0;
+  for (const paragraph of paragraphs) {
+    const firstLine = paragraph.split("\n")[0]?.trim() || "";
+    repo.insertUnit(book.id, renditionId, {
+      index: index++,
+      type: chapterPattern(firstLine) ? "heading" : "paragraph",
+      title: chapterPattern(firstLine) ? firstLine : null,
+      text: paragraph,
+      metadata: { encoding }
+    });
+    if (index % 100 === 0) notify(Math.min(0.95, index / Math.max(1, paragraphs.length)));
+  }
+  if (index === 0) {
+    repo.insertUnit(book.id, renditionId, { index: 0, type: "paragraph", text: "" });
+  }
+}
+
+async function processImageFolder(repo, book, renditionId, notify) {
+  const files = imageFilesInFolder(book.source_path);
+  if (files.length === 0) throw new Error("No supported image files found in folder");
+  for (let i = 0; i < files.length; i += 1) {
+    const asset = await normalizeImage(files[i], files[i]);
+    const assetId = repo.insertAsset(book.id, asset);
+    repo.insertUnit(book.id, renditionId, {
+      index: i,
+      type: "page",
+      assetId,
+      title: path.basename(files[i]),
+      metadata: { sourceType: "image-folder", sourcePath: files[i] }
+    });
+    notify((i + 1) / files.length);
+  }
+}
+
+async function processPdf(repo, book, renditionId, notify) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const data = new Uint8Array(fs.readFileSync(book.source_path));
+  const doc = await pdfjs.getDocument({ data, disableWorker: true }).promise;
+  for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+    const page = await doc.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1 });
+    const scale = PDF_MAX_LONG_EDGE / Math.max(viewport.width, viewport.height);
+    const scaled = page.getViewport({ scale });
+    const canvas = createCanvas(Math.ceil(scaled.width), Math.ceil(scaled.height));
+    const context = canvas.getContext("2d");
+    await page.render({ canvasContext: context, viewport: scaled }).promise;
+    const buffer = canvas.toBuffer("image/webp");
+    const assetId = repo.insertAsset(book.id, {
+      data: buffer,
+      mime: "image/webp",
+      width: canvas.width,
+      height: canvas.height,
+      sourceRef: `${book.source_path}#page=${pageNumber}`
+    });
+    repo.insertUnit(book.id, renditionId, {
+      index: pageNumber - 1,
+      type: "page",
+      assetId,
+      title: `Page ${pageNumber}`,
+      metadata: { sourceType: "pdf", page: pageNumber }
+    });
+    page.cleanup?.();
+    notify(pageNumber / doc.numPages);
+  }
+  await doc.destroy?.();
+}
+
+function findOpfParts(opf) {
+  const manifestItems = arrayify(opf?.package?.manifest?.item).map((item) => ({
+    id: item["@_id"],
+    href: item["@_href"],
+    mediaType: item["@_media-type"],
+    properties: item["@_properties"] || ""
+  }));
+  const byId = new Map(manifestItems.map((item) => [item.id, item]));
+  const spine = arrayify(opf?.package?.spine?.itemref)
+    .map((item) => byId.get(item["@_idref"]))
+    .filter(Boolean);
+  const metadata = opf?.package?.metadata || {};
+  return { manifestItems, byId, spine, metadata };
+}
+
+async function addEpubImageAsset(repo, bookId, zip, opfPath, href, sourceRef) {
+  const assetPath = resolveZipHref(opfPath, href);
+  const imageBuffer = await zip.bytes(assetPath);
+  const asset = await normalizeImage(imageBuffer, assetPath);
+  return repo.insertAsset(bookId, { ...asset, sourceRef: sourceRef || assetPath });
+}
+
+async function processEpubComic(repo, book, renditionId, zip, opfPath, spine, notify) {
+  let unitIndex = 0;
+  for (let spineIndex = 0; spineIndex < spine.length; spineIndex += 1) {
+    const item = spine[spineIndex];
+    const xhtmlPath = resolveZipHref(opfPath, item.href);
+    const html = await zip.text(xhtmlPath);
+    const root = parse(html);
+    const imageNodes = root.querySelectorAll("img,image");
+    const imageHrefs = imageNodes
+      .map((node) => getAttr(node, ["src", "href", "xlink:href"]))
+      .filter(Boolean);
+    for (const href of imageHrefs.length ? imageHrefs : []) {
+      const assetId = await addEpubImageAsset(repo, book.id, zip, xhtmlPath, href, `${xhtmlPath} -> ${href}`);
+      repo.insertUnit(book.id, renditionId, {
+        index: unitIndex,
+        type: "page",
+        assetId,
+        title: `Page ${unitIndex + 1}`,
+        metadata: { sourceType: "epub", spine: spineIndex, href }
+      });
+      unitIndex += 1;
+    }
+    notify((spineIndex + 1) / Math.max(1, spine.length));
+  }
+  if (unitIndex === 0) throw new Error("No image pages found in comic EPUB spine");
+}
+
+async function processEpubNovel(repo, book, renditionId, zip, opfPath, spine, notify) {
+  let unitIndex = 0;
+  for (let spineIndex = 0; spineIndex < spine.length; spineIndex += 1) {
+    const item = spine[spineIndex];
+    const xhtmlPath = resolveZipHref(opfPath, item.href);
+    const html = await zip.text(xhtmlPath);
+    const root = parse(html);
+    const body = root.querySelector("body") || root;
+    const nodes = body.querySelectorAll("h1,h2,h3,h4,h5,h6,p,img,image");
+    for (const node of nodes) {
+      const tagName = String(node.tagName || "").toLowerCase();
+      if (tagName === "img" || tagName === "image") {
+        const href = getAttr(node, ["src", "href", "xlink:href"]);
+        if (!href) continue;
+        const assetId = await addEpubImageAsset(repo, book.id, zip, xhtmlPath, href, `${xhtmlPath} -> ${href}`);
+        repo.insertUnit(book.id, renditionId, {
+          index: unitIndex++,
+          type: "image",
+          assetId,
+          title: node.getAttribute?.("alt") || null,
+          metadata: { sourceType: "epub", spine: spineIndex, href }
+        });
+        continue;
+      }
+      const text = cleanText(node.textContent);
+      if (!text) continue;
+      const safeHtml = sanitizeHtml(node.toString(), {
+        allowedTags: ["p", "strong", "em", "b", "i", "span", "br", "ruby", "rt", "h1", "h2", "h3", "h4", "h5", "h6"],
+        allowedAttributes: {}
+      });
+      repo.insertUnit(book.id, renditionId, {
+        index: unitIndex++,
+        type: /^h[1-6]$/.test(tagName) || chapterPattern(text) ? "heading" : "paragraph",
+        title: /^h[1-6]$/.test(tagName) || chapterPattern(text) ? text : null,
+        text,
+        html: safeHtml,
+        metadata: { sourceType: "epub", spine: spineIndex, tagName }
+      });
+    }
+    notify((spineIndex + 1) / Math.max(1, spine.length));
+  }
+  if (unitIndex === 0) throw new Error("No readable text or image units found in EPUB spine");
+}
+
+async function processEpub(repo, book, renditionId, notify) {
+  const zip = await readZipEntries(book.source_path);
+  try {
+    const parser = new XMLParser({ ignoreAttributes: false });
+    const container = parser.parse(await zip.text("META-INF/container.xml"));
+    const rootfile = arrayify(container?.container?.rootfiles?.rootfile)[0]?.["@_full-path"];
+    if (!rootfile) throw new Error("EPUB container does not contain a rootfile");
+    const opfPath = normalizeZipPath(rootfile);
+    const opf = parser.parse(await zip.text(opfPath));
+    const { spine } = findOpfParts(opf);
+    if (spine.length === 0) throw new Error("EPUB spine is empty");
+    if (book.content_type === "comic") {
+      await processEpubComic(repo, book, renditionId, zip, opfPath, spine, notify);
+    } else {
+      await processEpubNovel(repo, book, renditionId, zip, opfPath, spine, notify);
+    }
+  } finally {
+    await zip.reader.close();
+  }
+}
+
+function createImporter(repo) {
+  const queue = [];
+  const queued = new Set();
+  let active = false;
+
+  async function processBook(bookId) {
+    const book = repo.getRawBook(bookId);
+    if (!book) return;
+    const stats = repo.sourceStats(book.source_path, book.source_kind);
+    if (!stats.exists) throw new Error("Source file is missing");
+    const renditionKind = book.source_format === "txt" || (book.source_format === "epub" && book.content_type !== "comic")
+      ? "text-flow"
+      : "page-flow";
+    const renditionId = repo.beginRendition(book.id, renditionKind, stats.fingerprint);
+    const notify = (progress) => repo.setStatus(book.id, "processing", Math.max(0, Math.min(0.99, progress)), null);
+    notify(0.01);
+    if (book.source_format === "txt") await processTxt(repo, book, renditionId, notify);
+    else if (book.source_format === "image-folder") await processImageFolder(repo, book, renditionId, notify);
+    else if (book.source_format === "pdf") await processPdf(repo, book, renditionId, notify);
+    else if (book.source_format === "epub") await processEpub(repo, book, renditionId, notify);
+    else throw new Error(`Unsupported format: ${book.source_format}`);
+    repo.finishContent(book.id);
+    repo.addDiagnostic(book.id, "info", "Import complete", { finishedAt: nowIso(), renditionKind });
+  }
+
+  async function drain() {
+    if (active) return;
+    active = true;
+    while (queue.length) {
+      const bookId = queue.shift();
+      queued.delete(bookId);
+      try {
+        repo.setStatus(bookId, "processing", 0, null);
+        await processBook(bookId);
+      } catch (error) {
+        repo.setStatus(bookId, "error", 0, String(error?.message || error));
+        repo.addDiagnostic(bookId, "error", String(error?.message || error), {
+          stack: error?.stack || null
+        });
+      }
+    }
+    active = false;
+  }
+
+  function enqueue(bookId) {
+    if (queued.has(bookId)) return;
+    queued.add(bookId);
+    queue.push(bookId);
+    repo.setStatus(bookId, "queued", 0, null);
+    setTimeout(() => drain().catch(() => undefined), 0);
+  }
+
+  return {
+    enqueue,
+    enqueueMany(bookIds) {
+      for (const bookId of bookIds) enqueue(bookId);
+    },
+    isActive() {
+      return active || queue.length > 0;
+    }
+  };
+}
+
+module.exports = {
+  createImporter,
+  isImage,
+  imageFilesInFolder,
+  naturalSort
+};
