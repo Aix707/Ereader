@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { setImmediate: waitImmediate } = require("node:timers/promises");
 const chardet = require("chardet");
 const iconv = require("iconv-lite");
 const sharp = require("sharp");
@@ -19,6 +20,14 @@ const { createCanvas } = require("@napi-rs/canvas");
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".avif", ".tif", ".tiff"]);
 const PDF_MAX_LONG_EDGE = 2800;
 const IMAGE_MAX_LONG_EDGE = 3200;
+const TXT_UNIT_BATCH_SIZE = 500;
+
+class ImportCancelledError extends Error {
+  constructor() {
+    super("Import cancelled");
+    this.name = "ImportCancelledError";
+  }
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -111,7 +120,11 @@ function getAttr(node, names) {
 }
 
 async function readZipEntries(filePath) {
-  const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(fs.readFileSync(filePath))));
+  const sourceReader =
+    typeof fs.openAsBlob === "function"
+      ? new BlobReader(await fs.openAsBlob(filePath))
+      : new Uint8ArrayReader(new Uint8Array(fs.readFileSync(filePath)));
+  const reader = new ZipReader(sourceReader);
   const entries = await reader.getEntries();
   const map = new Map(entries.map((entry) => [normalizeZipPath(entry.filename), entry]));
   async function text(name) {
@@ -128,7 +141,7 @@ async function readZipEntries(filePath) {
   return { reader, map, text, bytes };
 }
 
-async function processTxt(repo, book, renditionId, notify) {
+async function processTxt(repo, book, renditionId, notify, assertActive) {
   const { text, encoding } = decodeText(book.source_path);
   const paragraphs = text
     .replace(/\r\n/g, "\n")
@@ -136,44 +149,61 @@ async function processTxt(repo, book, renditionId, notify) {
     .map((paragraph) => paragraph.trim())
     .filter(Boolean);
   let index = 0;
-  for (const paragraph of paragraphs) {
-    const firstLine = paragraph.split("\n")[0]?.trim() || "";
-    repo.insertUnit(book.id, renditionId, {
-      index: index++,
-      type: chapterPattern(firstLine) ? "heading" : "paragraph",
-      title: chapterPattern(firstLine) ? firstLine : null,
-      text: paragraph,
-      metadata: { encoding }
+  while (index < paragraphs.length) {
+    assertActive();
+    const batch = paragraphs.slice(index, index + TXT_UNIT_BATCH_SIZE);
+    repo.writeTransaction(() => {
+      for (const paragraph of batch) {
+        const firstLine = paragraph.split("\n")[0]?.trim() || "";
+        const isHeading = chapterPattern(firstLine);
+        repo.insertUnit(book.id, renditionId, {
+          index: index++,
+          type: isHeading ? "heading" : "paragraph",
+          title: isHeading ? firstLine : null,
+          text: paragraph,
+          metadata: { encoding }
+        });
+      }
     });
-    if (index % 100 === 0) notify(Math.min(0.95, index / Math.max(1, paragraphs.length)));
+    notify(0.05 + (index / Math.max(1, paragraphs.length)) * 0.9);
+    await waitImmediate();
   }
+
   if (index === 0) {
-    repo.insertUnit(book.id, renditionId, { index: 0, type: "paragraph", text: "" });
+    repo.writeTransaction(() => {
+      repo.insertUnit(book.id, renditionId, { index: 0, type: "paragraph", text: "", metadata: { encoding } });
+    });
   }
+  notify(0.95);
 }
 
-async function processImageFolder(repo, book, renditionId, notify) {
+async function processImageFolder(repo, book, renditionId, notify, assertActive) {
   const files = imageFilesInFolder(book.source_path);
   if (files.length === 0) throw new Error("No supported image files found in folder");
   for (let i = 0; i < files.length; i += 1) {
+    assertActive();
     const asset = await normalizeImage(files[i], files[i]);
-    const assetId = repo.insertAsset(book.id, asset);
-    repo.insertUnit(book.id, renditionId, {
-      index: i,
-      type: "page",
-      assetId,
-      title: path.basename(files[i]),
-      metadata: { sourceType: "image-folder", sourcePath: files[i] }
+    assertActive();
+    repo.writeTransaction(() => {
+      const assetId = repo.insertAsset(book.id, asset);
+      repo.insertUnit(book.id, renditionId, {
+        index: i,
+        type: "page",
+        assetId,
+        title: path.basename(files[i]),
+        metadata: { sourceType: "image-folder", sourcePath: files[i] }
+      });
     });
     notify((i + 1) / files.length);
   }
 }
 
-async function processPdf(repo, book, renditionId, notify) {
+async function processPdf(repo, book, renditionId, notify, assertActive) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const data = new Uint8Array(fs.readFileSync(book.source_path));
   const doc = await pdfjs.getDocument({ data, disableWorker: true }).promise;
   for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+    assertActive();
     const page = await doc.getPage(pageNumber);
     const viewport = page.getViewport({ scale: 1 });
     const scale = PDF_MAX_LONG_EDGE / Math.max(viewport.width, viewport.height);
@@ -182,19 +212,22 @@ async function processPdf(repo, book, renditionId, notify) {
     const context = canvas.getContext("2d");
     await page.render({ canvasContext: context, viewport: scaled }).promise;
     const buffer = canvas.toBuffer("image/webp");
-    const assetId = repo.insertAsset(book.id, {
-      data: buffer,
-      mime: "image/webp",
-      width: canvas.width,
-      height: canvas.height,
-      sourceRef: `${book.source_path}#page=${pageNumber}`
-    });
-    repo.insertUnit(book.id, renditionId, {
-      index: pageNumber - 1,
-      type: "page",
-      assetId,
-      title: `Page ${pageNumber}`,
-      metadata: { sourceType: "pdf", page: pageNumber }
+    assertActive();
+    repo.writeTransaction(() => {
+      const assetId = repo.insertAsset(book.id, {
+        data: buffer,
+        mime: "image/webp",
+        width: canvas.width,
+        height: canvas.height,
+        sourceRef: `${book.source_path}#page=${pageNumber}`
+      });
+      repo.insertUnit(book.id, renditionId, {
+        index: pageNumber - 1,
+        type: "page",
+        assetId,
+        title: `Page ${pageNumber}`,
+        metadata: { sourceType: "pdf", page: pageNumber }
+      });
     });
     page.cleanup?.();
     notify(pageNumber / doc.numPages);
@@ -217,16 +250,17 @@ function findOpfParts(opf) {
   return { manifestItems, byId, spine, metadata };
 }
 
-async function addEpubImageAsset(repo, bookId, zip, opfPath, href, sourceRef) {
+async function buildEpubImageAsset(zip, opfPath, href, sourceRef) {
   const assetPath = resolveZipHref(opfPath, href);
   const imageBuffer = await zip.bytes(assetPath);
   const asset = await normalizeImage(imageBuffer, assetPath);
-  return repo.insertAsset(bookId, { ...asset, sourceRef: sourceRef || assetPath });
+  return { ...asset, sourceRef: sourceRef || assetPath };
 }
 
-async function processEpubComic(repo, book, renditionId, zip, opfPath, spine, notify) {
+async function processEpubComic(repo, book, renditionId, zip, opfPath, spine, notify, assertActive) {
   let unitIndex = 0;
   for (let spineIndex = 0; spineIndex < spine.length; spineIndex += 1) {
+    assertActive();
     const item = spine[spineIndex];
     const xhtmlPath = resolveZipHref(opfPath, item.href);
     const html = await zip.text(xhtmlPath);
@@ -235,43 +269,60 @@ async function processEpubComic(repo, book, renditionId, zip, opfPath, spine, no
     const imageHrefs = imageNodes
       .map((node) => getAttr(node, ["src", "href", "xlink:href"]))
       .filter(Boolean);
+    const pending = [];
     for (const href of imageHrefs.length ? imageHrefs : []) {
-      const assetId = await addEpubImageAsset(repo, book.id, zip, xhtmlPath, href, `${xhtmlPath} -> ${href}`);
-      repo.insertUnit(book.id, renditionId, {
-        index: unitIndex,
-        type: "page",
-        assetId,
-        title: `Page ${unitIndex + 1}`,
-        metadata: { sourceType: "epub", spine: spineIndex, href }
+      assertActive();
+      const asset = await buildEpubImageAsset(zip, xhtmlPath, href, `${xhtmlPath} -> ${href}`);
+      pending.push({
+        asset,
+        unit: {
+          index: unitIndex,
+          type: "page",
+          title: `Page ${unitIndex + 1}`,
+          metadata: { sourceType: "epub", spine: spineIndex, href }
+        }
       });
       unitIndex += 1;
+    }
+    if (pending.length) {
+      repo.writeTransaction(() => {
+        for (const item of pending) {
+          const assetId = repo.insertAsset(book.id, item.asset);
+          repo.insertUnit(book.id, renditionId, { ...item.unit, assetId });
+        }
+      });
     }
     notify((spineIndex + 1) / Math.max(1, spine.length));
   }
   if (unitIndex === 0) throw new Error("No image pages found in comic EPUB spine");
 }
 
-async function processEpubNovel(repo, book, renditionId, zip, opfPath, spine, notify) {
+async function processEpubNovel(repo, book, renditionId, zip, opfPath, spine, notify, assertActive) {
   let unitIndex = 0;
   for (let spineIndex = 0; spineIndex < spine.length; spineIndex += 1) {
+    assertActive();
     const item = spine[spineIndex];
     const xhtmlPath = resolveZipHref(opfPath, item.href);
     const html = await zip.text(xhtmlPath);
     const root = parse(html);
     const body = root.querySelector("body") || root;
     const nodes = body.querySelectorAll("h1,h2,h3,h4,h5,h6,p,img,image");
+    const pending = [];
     for (const node of nodes) {
+      assertActive();
       const tagName = String(node.tagName || "").toLowerCase();
       if (tagName === "img" || tagName === "image") {
         const href = getAttr(node, ["src", "href", "xlink:href"]);
         if (!href) continue;
-        const assetId = await addEpubImageAsset(repo, book.id, zip, xhtmlPath, href, `${xhtmlPath} -> ${href}`);
-        repo.insertUnit(book.id, renditionId, {
-          index: unitIndex++,
-          type: "image",
-          assetId,
-          title: node.getAttribute?.("alt") || null,
-          metadata: { sourceType: "epub", spine: spineIndex, href }
+        const asset = await buildEpubImageAsset(zip, xhtmlPath, href, `${xhtmlPath} -> ${href}`);
+        pending.push({
+          asset,
+          unit: {
+            index: unitIndex++,
+            type: "image",
+            title: node.getAttribute?.("alt") || null,
+            metadata: { sourceType: "epub", spine: spineIndex, href }
+          }
         });
         continue;
       }
@@ -281,13 +332,23 @@ async function processEpubNovel(repo, book, renditionId, zip, opfPath, spine, no
         allowedTags: ["p", "strong", "em", "b", "i", "span", "br", "ruby", "rt", "h1", "h2", "h3", "h4", "h5", "h6"],
         allowedAttributes: {}
       });
-      repo.insertUnit(book.id, renditionId, {
-        index: unitIndex++,
-        type: /^h[1-6]$/.test(tagName) || chapterPattern(text) ? "heading" : "paragraph",
-        title: /^h[1-6]$/.test(tagName) || chapterPattern(text) ? text : null,
-        text,
-        html: safeHtml,
-        metadata: { sourceType: "epub", spine: spineIndex, tagName }
+      pending.push({
+        unit: {
+          index: unitIndex++,
+          type: /^h[1-6]$/.test(tagName) || chapterPattern(text) ? "heading" : "paragraph",
+          title: /^h[1-6]$/.test(tagName) || chapterPattern(text) ? text : null,
+          text,
+          html: safeHtml,
+          metadata: { sourceType: "epub", spine: spineIndex, tagName }
+        }
+      });
+    }
+    if (pending.length) {
+      repo.writeTransaction(() => {
+        for (const item of pending) {
+          const assetId = item.asset ? repo.insertAsset(book.id, item.asset) : null;
+          repo.insertUnit(book.id, renditionId, assetId ? { ...item.unit, assetId } : item.unit);
+        }
       });
     }
     notify((spineIndex + 1) / Math.max(1, spine.length));
@@ -295,7 +356,7 @@ async function processEpubNovel(repo, book, renditionId, zip, opfPath, spine, no
   if (unitIndex === 0) throw new Error("No readable text or image units found in EPUB spine");
 }
 
-async function processEpub(repo, book, renditionId, notify) {
+async function processEpub(repo, book, renditionId, notify, assertActive) {
   const zip = await readZipEntries(book.source_path);
   try {
     const parser = new XMLParser({ ignoreAttributes: false });
@@ -307,18 +368,19 @@ async function processEpub(repo, book, renditionId, notify) {
     const { spine } = findOpfParts(opf);
     if (spine.length === 0) throw new Error("EPUB spine is empty");
     if (book.content_type === "comic") {
-      await processEpubComic(repo, book, renditionId, zip, opfPath, spine, notify);
+      await processEpubComic(repo, book, renditionId, zip, opfPath, spine, notify, assertActive);
     } else {
-      await processEpubNovel(repo, book, renditionId, zip, opfPath, spine, notify);
+      await processEpubNovel(repo, book, renditionId, zip, opfPath, spine, notify, assertActive);
     }
   } finally {
     await zip.reader.close();
   }
 }
 
-function createImporter(repo) {
+function createImporter(repo, options = {}) {
   const queue = [];
   const queued = new Set();
+  const cancelled = new Set();
   let active = false;
 
   async function processBook(bookId) {
@@ -329,14 +391,27 @@ function createImporter(repo) {
     const renditionKind = book.source_format === "txt" || (book.source_format === "epub" && book.content_type !== "comic")
       ? "text-flow"
       : "page-flow";
+    const assertActive = () => {
+      if (cancelled.has(bookId)) {
+        cancelled.delete(bookId);
+        throw new ImportCancelledError();
+      }
+    };
+    assertActive();
     const renditionId = repo.beginRendition(book.id, renditionKind, stats.fingerprint);
-    const notify = (progress) => repo.setStatus(book.id, "processing", Math.max(0, Math.min(0.99, progress)), null);
+    const notify = (progress) => {
+      assertActive();
+      const next = Math.max(0, Math.min(0.99, progress));
+      repo.setStatus(book.id, "processing", next, null);
+      options.onProgress?.(book.id, next);
+    };
     notify(0.01);
-    if (book.source_format === "txt") await processTxt(repo, book, renditionId, notify);
-    else if (book.source_format === "image-folder") await processImageFolder(repo, book, renditionId, notify);
-    else if (book.source_format === "pdf") await processPdf(repo, book, renditionId, notify);
-    else if (book.source_format === "epub") await processEpub(repo, book, renditionId, notify);
+    if (book.source_format === "txt") await processTxt(repo, book, renditionId, notify, assertActive);
+    else if (book.source_format === "image-folder") await processImageFolder(repo, book, renditionId, notify, assertActive);
+    else if (book.source_format === "pdf") await processPdf(repo, book, renditionId, notify, assertActive);
+    else if (book.source_format === "epub") await processEpub(repo, book, renditionId, notify, assertActive);
     else throw new Error(`Unsupported format: ${book.source_format}`);
+    assertActive();
     repo.finishContent(book.id);
     repo.addDiagnostic(book.id, "info", "Import complete", { finishedAt: nowIso(), renditionKind });
   }
@@ -348,13 +423,24 @@ function createImporter(repo) {
       const bookId = queue.shift();
       queued.delete(bookId);
       try {
+        options.onStarted?.(bookId);
         repo.setStatus(bookId, "processing", 0, null);
         await processBook(bookId);
+        options.onFinished?.(bookId);
       } catch (error) {
-        repo.setStatus(bookId, "error", 0, String(error?.message || error));
-        repo.addDiagnostic(bookId, "error", String(error?.message || error), {
-          stack: error?.stack || null
-        });
+        if (error instanceof ImportCancelledError) {
+          repo.refreshCounts?.(bookId);
+          repo.setStatus(bookId, "cancelled", 0, "Import cancelled");
+          repo.addDiagnostic(bookId, "warn", "Import cancelled", { cancelledAt: nowIso() });
+          options.onCancelled?.(bookId);
+        } else {
+          repo.refreshCounts?.(bookId);
+          repo.setStatus(bookId, "error", 0, String(error?.message || error));
+          repo.addDiagnostic(bookId, "error", String(error?.message || error), {
+            stack: error?.stack || null
+          });
+          options.onError?.(bookId, error);
+        }
       }
     }
     active = false;
@@ -362,6 +448,7 @@ function createImporter(repo) {
 
   function enqueue(bookId) {
     if (queued.has(bookId)) return;
+    cancelled.delete(bookId);
     queued.add(bookId);
     queue.push(bookId);
     repo.setStatus(bookId, "queued", 0, null);
@@ -370,6 +457,17 @@ function createImporter(repo) {
 
   return {
     enqueue,
+    cancel(bookId) {
+      if (queued.delete(bookId)) {
+        const index = queue.indexOf(bookId);
+        if (index >= 0) queue.splice(index, 1);
+        repo.setStatus(bookId, "cancelled", 0, "Import cancelled");
+        options.onCancelled?.(bookId);
+        return true;
+      }
+      cancelled.add(bookId);
+      return true;
+    },
     enqueueMany(bookIds) {
       for (const bookId of bookIds) enqueue(bookId);
     },

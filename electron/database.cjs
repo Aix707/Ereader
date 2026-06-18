@@ -8,7 +8,7 @@ const DEFAULT_PREFS = {
   lineHeight: 1.8,
   pageSpread: "single",
   readingDirection: "ltr",
-  fitMode: "width"
+  fitMode: "contain"
 };
 
 function nowIso() {
@@ -432,8 +432,16 @@ function createRepository(userDataPath) {
     );
   }
 
-  function finishContent(bookId) {
+  function writeTransaction(work) {
+    return db.transaction(work)();
+  }
+
+  function refreshCounts(bookId) {
     statements.updateCounts.run(bookId, bookId, nowIso(), bookId);
+  }
+
+  function finishContent(bookId) {
+    refreshCounts(bookId);
     setStatus(bookId, "ready", 1, null);
   }
 
@@ -508,7 +516,18 @@ function createRepository(userDataPath) {
           (SELECT COALESCE(SUM(byte_length), 0) FROM assets) AS assetBytes`
       )
       .get();
-    return { dbPath, stats, books, recentDiagnostics };
+    const integrity = db
+      .prepare(
+        `SELECT
+          (SELECT COUNT(*) FROM assets a
+           WHERE NOT EXISTS (SELECT 1 FROM reading_units ru WHERE ru.asset_id = a.id)) AS orphanAssets,
+          (SELECT COUNT(*) FROM reading_units ru
+           WHERE ru.asset_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.id = ru.asset_id)) AS missingAssets,
+          (SELECT COUNT(*) FROM books b WHERE b.import_status = 'ready' AND b.unit_count = 0) AS readyWithoutUnits,
+          (SELECT COALESCE(MAX(byte_length), 0) FROM assets) AS largestAssetBytes`
+      )
+      .get();
+    return { dbPath, stats: { ...stats, ...integrity }, books, recentDiagnostics };
   }
 
   function migrateFromJson(jsonPath) {
@@ -539,7 +558,7 @@ function createRepository(userDataPath) {
 
   function booksNeedingImport() {
     return db
-      .prepare("SELECT id FROM books WHERE import_status IN ('queued', 'error', 'stale') OR unit_count = 0")
+      .prepare("SELECT id FROM books WHERE import_status IN ('queued', 'error', 'stale')")
       .all()
       .map((row) => row.id);
   }
@@ -558,6 +577,8 @@ function createRepository(userDataPath) {
     beginRendition,
     insertAsset,
     insertUnit,
+    writeTransaction,
+    refreshCounts,
     finishContent,
     getTextUnits,
     getPageUnits,

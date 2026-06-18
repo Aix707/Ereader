@@ -13,6 +13,7 @@
     "rebuild:native": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.100",
     "@zip.js/zip.js": "^2.8.26",
     "better-sqlite3": "^12.11.1",
     "chardet": "^2.1.0",

@@ -2,6 +2,7 @@ export type BookFormat = "txt" | "pdf" | "epub" | "image-folder";
 export type ContentType = "novel" | "comic";
 export type PageSpread = "single" | "double";
 export type ReadingDirection = "ltr" | "rtl";
+/** @deprecated Comic images now always fit inside both width and height bounds. */
 export type FitMode = "width" | "height" | "contain";
 
 export interface ReaderPreferences {
@@ -34,7 +35,7 @@ export interface BookItem {
   lastOpenedAt?: string | null;
   size?: number | null;
   sourceExists?: boolean;
-  importStatus?: "queued" | "processing" | "ready" | "error" | "stale";
+  importStatus?: "queued" | "processing" | "ready" | "error" | "stale" | "cancelled";
   importProgress?: number;
   importError?: string | null;
   unitCount?: number;
@@ -84,6 +85,10 @@ export interface DiagnosticsSummary {
     units: number;
     assets: number;
     assetBytes: number;
+    orphanAssets: number;
+    missingAssets: number;
+    readyWithoutUnits: number;
+    largestAssetBytes: number;
   };
   books: Array<{
     id: string;
@@ -108,6 +113,13 @@ export interface DiagnosticsSummary {
     details?: Record<string, unknown> | null;
     createdAt: string;
   }>;
+}
+
+export interface ImportStateChange {
+  type: "queued" | "started" | "progress" | "finished" | "error" | "cancelled";
+  bookId: string;
+  progress?: number;
+  message?: string;
 }
 
 export type BookPatch = Partial<

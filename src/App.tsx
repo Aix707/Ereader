@@ -20,8 +20,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    return window.ereader.onImportStateChanged(() => {
+      window.ereader.listLibrary().then(setStore).catch(() => undefined);
+    });
+  }, []);
+
+  useEffect(() => {
     const hasActiveImports = store.books.some((book) =>
-      ["queued", "processing", "stale"].includes(book.importStatus || "")
+      ["queued", "processing"].includes(book.importStatus || "")
     );
     if (!hasActiveImports) return;
     const timer = window.setInterval(() => {
@@ -67,6 +73,14 @@ export function App() {
     }));
   }
 
+  async function cancelImport(id: string) {
+    const updated = await window.ereader.cancelImport(id);
+    setStore((current) => ({
+      ...current,
+      books: current.books.map((book) => (book.id === id ? updated : book))
+    }));
+  }
+
   function openBook(book: BookItem) {
     setActiveBookId(book.id);
     updateBook(book.id, { lastOpenedAt: new Date().toISOString() }).catch(() => undefined);
@@ -102,6 +116,7 @@ export function App() {
       onRemoveBook={removeBook}
       onUpdateBook={updateBook}
       onRebuildBook={rebuildBook}
+      onCancelImport={cancelImport}
       onOpenDiagnostics={() => setScreen("diagnostics")}
     />
   );

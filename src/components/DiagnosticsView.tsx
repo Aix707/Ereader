@@ -67,6 +67,10 @@ export function DiagnosticsView({ onBack, onRebuild }: DiagnosticsViewProps) {
             <Stat label="阅读单元" value={summary.stats.units} />
             <Stat label="资产" value={summary.stats.assets} />
             <Stat label="资产体积" value={`${(summary.stats.assetBytes / 1024 / 1024).toFixed(1)} MB`} />
+            <Stat label="孤儿资产" value={summary.stats.orphanAssets} />
+            <Stat label="缺失引用" value={summary.stats.missingAssets} />
+            <Stat label="空内容" value={summary.stats.readyWithoutUnits} />
+            <Stat label="最大资产" value={`${(summary.stats.largestAssetBytes / 1024 / 1024).toFixed(1)} MB`} />
           </div>
 
           <section className="diagnostic-panel">

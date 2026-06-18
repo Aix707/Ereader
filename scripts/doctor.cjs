@@ -21,7 +21,7 @@ async function main() {
 
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name);
-  const required = ["books", "renditions", "reading_units", "assets", "progress", "preferences", "diagnostics"];
+  const required = ["books", "renditions", "reading_units", "assets", "progress", "preferences", "diagnostics", "import_jobs"];
   const missing = required.filter((name) => !tables.includes(name));
   if (missing.length) fail(`Missing tables: ${missing.join(", ")}`);
 
@@ -30,7 +30,13 @@ async function main() {
     (SELECT COUNT(*) FROM books) AS books,
     (SELECT COUNT(*) FROM reading_units) AS units,
     (SELECT COUNT(*) FROM assets) AS assets,
-    (SELECT COALESCE(SUM(byte_length), 0) FROM assets) AS assetBytes
+    (SELECT COALESCE(SUM(byte_length), 0) FROM assets) AS assetBytes,
+    (SELECT COUNT(*) FROM assets a
+     WHERE NOT EXISTS (SELECT 1 FROM reading_units ru WHERE ru.asset_id = a.id)) AS orphanAssets,
+    (SELECT COUNT(*) FROM reading_units ru
+     WHERE ru.asset_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.id = ru.asset_id)) AS missingAssets,
+    (SELECT COUNT(*) FROM books b WHERE b.import_status = 'ready' AND b.unit_count = 0) AS readyWithoutUnits,
+    (SELECT COALESCE(MAX(byte_length), 0) FROM assets) AS largestAssetBytes
 `).get();
 
   const books = db.prepare(`
@@ -44,7 +50,14 @@ async function main() {
   console.log(`Database: ${dbPath}`);
   console.log(`Tables: ${tables.join(", ")}`);
   console.log(`Books: ${stats.books}, units: ${stats.units}, assets: ${stats.assets}, asset bytes: ${(stats.assetBytes / 1024 / 1024).toFixed(1)} MB`);
+  console.log(
+    `Integrity: orphan assets=${stats.orphanAssets}, missing asset refs=${stats.missingAssets}, ready without units=${stats.readyWithoutUnits}, largest asset=${(stats.largestAssetBytes / 1024 / 1024).toFixed(1)} MB`
+  );
   console.log("");
+
+  if (stats.missingAssets > 0) fail(`Missing asset references: ${stats.missingAssets}`);
+  if (stats.readyWithoutUnits > 0) fail(`Ready books without reading units: ${stats.readyWithoutUnits}`);
+  if (stats.orphanAssets > 0) console.warn(`Warning: orphan assets found: ${stats.orphanAssets}`);
 
   for (const book of books) {
     const exists = fs.existsSync(book.path);

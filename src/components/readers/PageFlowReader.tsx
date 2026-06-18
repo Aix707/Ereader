@@ -120,22 +120,10 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
 }
 
 function PageImage({ page, maxWidth, maxHeight }: { page: PageUnit; maxWidth: number; maxHeight: number }) {
-  const [src, setSrc] = useState("");
   const displaySize = useMemo(
     () => getContainedSize(page.width, page.height, maxWidth, maxHeight),
     [maxHeight, maxWidth, page.height, page.width]
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    setSrc("");
-    window.ereader.getAssetDataUrl(page.assetId).then((dataUrl) => {
-      if (!cancelled) setSrc(dataUrl);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [page.assetId]);
 
   return (
     <div
@@ -146,10 +134,10 @@ function PageImage({ page, maxWidth, maxHeight }: { page: PageUnit; maxWidth: nu
         aspectRatio: page.width && page.height ? `${page.width} / ${page.height}` : undefined
       }}
     >
-      {src && displaySize ? (
+      {displaySize ? (
         <img
           className="comic-image"
-          src={src}
+          src={window.ereader.getAssetUrl(page.assetId)}
           alt={page.title || `Page ${page.unitIndex + 1}`}
           width={page.width || undefined}
           height={page.height || undefined}

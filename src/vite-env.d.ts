@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { BookItem, BookPatch, DiagnosticsSummary, LibraryStore, PageUnit, TextUnit } from "./types";
+import type { BookItem, BookPatch, DiagnosticsSummary, ImportStateChange, LibraryStore, PageUnit, TextUnit } from "./types";
 
 declare global {
   interface Window {
@@ -13,9 +13,12 @@ declare global {
       revealBook: (id: string) => Promise<void>;
       getTextUnits: (id: string) => Promise<TextUnit[]>;
       getPageUnits: (id: string) => Promise<PageUnit[]>;
+      getAssetUrl: (assetId: number) => string;
       getAssetDataUrl: (assetId: number) => Promise<string>;
       rebuildBook: (id: string) => Promise<BookItem>;
+      cancelImport: (id: string) => Promise<BookItem>;
       getDiagnostics: () => Promise<DiagnosticsSummary>;
+      onImportStateChanged: (callback: (state: ImportStateChange) => void) => () => void;
       windowControls: {
         minimize: () => Promise<void>;
         toggleMaximize: () => Promise<{ isMaximized: boolean }>;

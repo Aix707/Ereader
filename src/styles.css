@@ -472,6 +472,11 @@ input,
   background: #f3e0bf;
 }
 
+.status-pill.cancelled {
+  color: #6a6257;
+  background: #e9e1d5;
+}
+
 .card-actions {
   gap: 6px;
 }
@@ -738,6 +743,18 @@ input,
   box-shadow: 0 24px 70px rgba(78, 66, 48, 0.1);
 }
 
+.text-virtual-spacer {
+  position: relative;
+}
+
+.text-virtual-window {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  will-change: transform;
+}
+
 .text-page p {
   margin: 0 0 1.1em;
   white-space: pre-wrap;
@@ -962,7 +979,7 @@ input,
 
 .diagnostic-stat-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 12px;
 }
 

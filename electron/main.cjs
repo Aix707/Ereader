@@ -1,9 +1,10 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, protocol, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { createRepository } = require("./database.cjs");
-const { createImporter, imageFilesInFolder } = require("./importer.cjs");
+const { imageFilesInFolder } = require("./importer.cjs");
+const { createWorkerImporter } = require("./import-worker-client.cjs");
 
 const FILE_FORMATS = new Map([
   [".txt", "txt"],
@@ -14,6 +15,18 @@ const FILE_FORMATS = new Map([
 let mainWindow;
 let repo;
 let importer;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "ereader-asset",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true
+    }
+  }
+]);
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -48,10 +61,39 @@ function sendWindowState() {
   mainWindow.webContents.send("window:stateChanged", { isMaximized: mainWindow.isMaximized() });
 }
 
+function registerAssetProtocol() {
+  protocol.handle("ereader-asset", async (request) => {
+    try {
+      const url = new URL(request.url);
+      const assetId = Number(url.hostname === "asset" ? url.pathname.slice(1) : url.hostname);
+      if (!Number.isSafeInteger(assetId) || assetId <= 0) {
+        return new Response("Invalid asset id", { status: 400 });
+      }
+      const asset = repo.getAsset(assetId);
+      if (!asset) return new Response("Asset not found", { status: 404 });
+      return new Response(asset.data, {
+        headers: {
+          "Content-Type": asset.mime,
+          "Cache-Control": "no-store",
+          "Content-Length": String(asset.data.length)
+        }
+      });
+    } catch (error) {
+      return new Response(String(error?.message || error), { status: 500 });
+    }
+  });
+}
+
 app.whenReady().then(() => {
   repo = createRepository(app.getPath("userData"));
   repo.migrateFromJson(path.join(app.getPath("userData"), "library.json"));
-  importer = createImporter(repo);
+  importer = createWorkerImporter(app.getPath("userData"), repo, {
+    onStateChanged(message) {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.webContents.send("import:stateChanged", message);
+    }
+  });
+  registerAssetProtocol();
   createWindow();
   importer.enqueueMany(repo.booksNeedingImport());
   app.on("activate", () => {
@@ -61,6 +103,10 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+  importer?.dispose?.();
 });
 
 function makeId(absPath) {
@@ -178,6 +224,12 @@ ipcMain.handle("content:getAssetDataUrl", (_event, assetId) => assetToDataUrl(re
 ipcMain.handle("cache:rebuildBook", (_event, id) => {
   requireBook(id);
   importer.enqueue(id);
+  return repo.getBook(id);
+});
+
+ipcMain.handle("cache:cancelImport", (_event, id) => {
+  requireBook(id);
+  importer.cancel(id);
   return repo.getBook(id);
 });
 

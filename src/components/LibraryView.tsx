@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  CircleStop,
   Clock3,
   Database,
   FileArchive,
@@ -30,6 +31,7 @@ interface LibraryViewProps {
   onRemoveBook: (id: string) => Promise<void>;
   onUpdateBook: (id: string, patch: BookPatch) => Promise<BookItem>;
   onRebuildBook: (id: string) => Promise<void>;
+  onCancelImport: (id: string) => Promise<void>;
   onOpenDiagnostics: () => void;
 }
 
@@ -43,6 +45,7 @@ export function LibraryView({
   onRemoveBook,
   onUpdateBook,
   onRebuildBook,
+  onCancelImport,
   onOpenDiagnostics
 }: LibraryViewProps) {
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -175,6 +178,7 @@ export function LibraryView({
                 onRemove={() => onRemoveBook(book.id)}
                 onUpdateBook={(patch) => onUpdateBook(book.id, patch)}
                 onRebuild={() => onRebuildBook(book.id)}
+                onCancelImport={() => onCancelImport(book.id)}
               />
             ))}
           </div>
@@ -208,13 +212,15 @@ function BookCard({
   onOpen,
   onRemove,
   onUpdateBook,
-  onRebuild
+  onRebuild,
+  onCancelImport
 }: {
   book: BookItem;
   onOpen: () => void;
   onRemove: () => Promise<void>;
   onUpdateBook: (patch: BookPatch) => Promise<BookItem>;
   onRebuild: () => Promise<void>;
+  onCancelImport: () => Promise<void>;
 }) {
   const icon = book.format === "image-folder" ? <Images size={24} /> : <BookOpen size={24} />;
   const progress = formatPercent(book.progress.percent || 0);
@@ -263,7 +269,13 @@ function BookCard({
               {book.contentType === "novel" ? "转漫画" : "转小说"}
             </button>
           )}
-          {(importStatus === "error" || importStatus === "stale") && (
+          {(importStatus === "queued" || importStatus === "processing") && (
+            <button className="icon-text-button" onClick={onCancelImport} title="取消导入">
+              <CircleStop size={16} />
+              取消
+            </button>
+          )}
+          {(importStatus === "error" || importStatus === "stale" || importStatus === "cancelled") && (
             <button className="icon-text-button" onClick={onRebuild} title="重建数据库内容">
               <Import size={16} />
               重建
@@ -287,5 +299,6 @@ function statusLabel(status: string) {
   if (status === "ready") return "就绪";
   if (status === "error") return "错误";
   if (status === "stale") return "需重建";
+  if (status === "cancelled") return "已取消";
   return status;
 }
