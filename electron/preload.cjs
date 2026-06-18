@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("ereader", {
   windowControls: {
     minimize: () => ipcRenderer.invoke("window:minimize"),
     toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
+    toggleFullScreen: () => ipcRenderer.invoke("window:toggleFullScreen"),
     close: () => ipcRenderer.invoke("window:close"),
     getState: () => ipcRenderer.invoke("window:getState"),
     onStateChanged: (callback) => {

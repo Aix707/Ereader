@@ -4,7 +4,9 @@ import {
   Columns2,
   FileText,
   Image,
+  Maximize2,
   Minus,
+  Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -26,7 +28,10 @@ interface ReaderViewProps {
 
 export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
   const [progressLabel, setProgressLabel] = useState(formatPercent(book.progress.percent || 0));
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [chromeVisible, setChromeVisible] = useState(true);
   const saveTimer = useRef<number | null>(null);
+  const chromeTimer = useRef<number | null>(null);
 
   const saveProgress = useCallback(
     (progress: Partial<ReadingProgress>) => {
@@ -44,8 +49,41 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
   useEffect(() => {
     return () => {
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      if (chromeTimer.current) window.clearTimeout(chromeTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    let cleanup: () => void = () => undefined;
+    window.ereader.windowControls.getState().then((state) => setIsFullScreen(state.isFullScreen)).catch(() => undefined);
+    cleanup = window.ereader.windowControls.onStateChanged((state) => setIsFullScreen(state.isFullScreen));
+    return cleanup;
+  }, []);
+
+  useEffect(() => {
+    function handleKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement;
+      if (event.key === "F11") {
+        event.preventDefault();
+        toggleFullScreen();
+      }
+      if (event.key === "Escape" && isFullScreen && !target.closest("input")) {
+        event.preventDefault();
+        toggleFullScreen();
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  });
+
+  useEffect(() => {
+    if (!isFullScreen) {
+      setChromeVisible(true);
+      clearChromeHideTimer();
+      return;
+    }
+    revealChrome();
+  }, [isFullScreen]);
 
   const updatePreference = (preferences: Partial<ReaderPreferences>) => {
     onUpdateBook(book.id, { preferences }).catch(() => undefined);
@@ -66,9 +104,41 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
     window.ereader.windowControls.toggleMaximize().catch(() => undefined);
   }
 
+  function clearChromeHideTimer() {
+    if (chromeTimer.current) {
+      window.clearTimeout(chromeTimer.current);
+      chromeTimer.current = null;
+    }
+  }
+
+  function scheduleChromeHide() {
+    if (!isFullScreen) return;
+    clearChromeHideTimer();
+    chromeTimer.current = window.setTimeout(() => setChromeVisible(false), 1800);
+  }
+
+  function revealChrome() {
+    if (!isFullScreen) return;
+    setChromeVisible(true);
+    scheduleChromeHide();
+  }
+
+  function toggleFullScreen() {
+    window.ereader.windowControls.toggleFullScreen().then((state) => setIsFullScreen(state.isFullScreen)).catch(() => undefined);
+  }
+
   return (
-    <main className="reader-shell">
-      <header className="reader-toolbar" onDoubleClick={handleToolbarDoubleClick}>
+    <main
+      className={`reader-shell${isFullScreen ? " fullscreen" : ""}${isFullScreen && !chromeVisible ? " chrome-hidden" : ""}`}
+      onMouseMove={revealChrome}
+      onFocusCapture={revealChrome}
+    >
+      <header
+        className="reader-toolbar"
+        onDoubleClick={handleToolbarDoubleClick}
+        onMouseEnter={clearChromeHideTimer}
+        onMouseLeave={scheduleChromeHide}
+      >
         <div className="reader-left-tools">
           <button className="toolbar-button" onClick={onBack} title="返回书架">
             <ArrowLeft size={18} />
@@ -134,6 +204,13 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
               </button>
             </div>
           )}
+          <button
+            className="toolbar-button"
+            onClick={toggleFullScreen}
+            title={isFullScreen ? "退出全屏 (F11)" : "全屏阅读 (F11)"}
+          >
+            {isFullScreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
           <WindowControls />
         </div>
       </header>

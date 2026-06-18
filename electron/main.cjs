@@ -47,6 +47,8 @@ function createWindow() {
 
   mainWindow.on("maximize", sendWindowState);
   mainWindow.on("unmaximize", sendWindowState);
+  mainWindow.on("enter-full-screen", sendWindowState);
+  mainWindow.on("leave-full-screen", sendWindowState);
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
@@ -58,7 +60,14 @@ function createWindow() {
 
 function sendWindowState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("window:stateChanged", { isMaximized: mainWindow.isMaximized() });
+  mainWindow.webContents.send("window:stateChanged", windowState());
+}
+
+function windowState() {
+  return {
+    isMaximized: Boolean(mainWindow?.isMaximized()),
+    isFullScreen: Boolean(mainWindow?.isFullScreen())
+  };
 }
 
 function registerAssetProtocol() {
@@ -249,8 +258,16 @@ ipcMain.handle("window:toggleMaximize", () => {
   return { isMaximized: mainWindow.isMaximized() };
 });
 
+ipcMain.handle("window:toggleFullScreen", () => {
+  if (!mainWindow) return { isFullScreen: false };
+  const isFullScreen = !mainWindow.isFullScreen();
+  mainWindow.setFullScreen(isFullScreen);
+  sendWindowState();
+  return { isFullScreen };
+});
+
 ipcMain.handle("window:close", () => {
   mainWindow?.close();
 });
 
-ipcMain.handle("window:getState", () => ({ isMaximized: Boolean(mainWindow?.isMaximized()) }));
+ipcMain.handle("window:getState", () => windowState());

@@ -22,9 +22,10 @@ declare global {
       windowControls: {
         minimize: () => Promise<void>;
         toggleMaximize: () => Promise<{ isMaximized: boolean }>;
+        toggleFullScreen: () => Promise<{ isFullScreen: boolean }>;
         close: () => Promise<void>;
-        getState: () => Promise<{ isMaximized: boolean }>;
-        onStateChanged: (callback: (state: { isMaximized: boolean }) => void) => () => void;
+        getState: () => Promise<{ isMaximized: boolean; isFullScreen: boolean }>;
+        onStateChanged: (callback: (state: { isMaximized: boolean; isFullScreen: boolean }) => void) => () => void;
       };
     };
   }

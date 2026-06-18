@@ -557,6 +557,10 @@ input,
   grid-template-rows: 48px 1fr;
 }
 
+.reader-shell.fullscreen {
+  grid-template-rows: 1fr;
+}
+
 .reader-toolbar {
   justify-content: space-between;
   gap: 10px;
@@ -564,7 +568,25 @@ input,
   padding: 6px 8px 6px 12px;
   border-bottom: 1px solid #ded6c9;
   background: rgba(255, 253, 249, 0.96);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
   -webkit-app-region: drag;
+}
+
+.reader-shell.fullscreen .reader-toolbar {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  right: 0;
+  left: 0;
+  box-shadow: 0 16px 42px rgba(77, 65, 46, 0.1);
+}
+
+.reader-shell.fullscreen.chrome-hidden .reader-toolbar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-110%);
 }
 
 .reader-left-tools {
@@ -648,6 +670,10 @@ input,
   overflow: hidden;
 }
 
+.reader-shell.fullscreen .reader-stage {
+  height: 100vh;
+}
+
 .reader-status {
   position: absolute;
   z-index: 6;
@@ -666,6 +692,18 @@ input,
   font-size: 12px;
   opacity: 0.82;
   pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.reader-shell.fullscreen .reader-status {
+  bottom: 14px;
+}
+
+.reader-shell.fullscreen.chrome-hidden .reader-status {
+  opacity: 0;
+  transform: translateY(42px);
 }
 
 .reader-status span {
@@ -855,6 +893,23 @@ input,
   color: #5f564a;
   background: rgba(255, 253, 249, 0.9);
   font-size: 12px;
+}
+
+.floating-page-indicator button {
+  min-height: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.floating-page-indicator input {
+  width: 58px;
+  border: 0;
+  outline: 0;
+  color: #30291e;
+  text-align: center;
+  background: transparent;
 }
 
 .epub-container {

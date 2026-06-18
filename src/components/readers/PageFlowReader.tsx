@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, WheelEvent } from "react";
 import type { BookItem, PageUnit, ReadingProgress } from "../../types";
 
 interface PageFlowReaderProps {
@@ -9,17 +10,26 @@ interface PageFlowReaderProps {
 }
 
 const PAGE_GAP = 12;
+const WHEEL_PAGE_THRESHOLD = 70;
+const WHEEL_COOLDOWN_MS = 260;
 
 export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowReaderProps) {
   const [pages, setPages] = useState<PageUnit[]>([]);
   const [currentIndex, setCurrentIndex] = useState(Math.max(0, (book.progress.page || 1) - 1));
+  const [isJumping, setIsJumping] = useState(false);
+  const [jumpValue, setJumpValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const pagesRef = useRef<HTMLDivElement | null>(null);
+  const jumpInputRef = useRef<HTMLInputElement | null>(null);
+  const wheelDeltaRef = useRef(0);
+  const lastWheelAtRef = useRef(0);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     setError(null);
     setPages([]);
+    setCurrentIndex(Math.max(0, (book.progress.page || 1) - 1));
+    setIsJumping(false);
     window.ereader
       .getPageUnits(book.id)
       .then(setPages)
@@ -31,6 +41,10 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
     const spread = pages.slice(currentIndex, currentIndex + spreadSize);
     return book.preferences.readingDirection === "rtl" ? [...spread].reverse() : spread;
   }, [book.preferences.readingDirection, currentIndex, pages, spreadSize]);
+
+  useEffect(() => {
+    setCurrentIndex((index) => alignToSpreadStart(index, spreadSize));
+  }, [spreadSize]);
 
   useEffect(() => {
     const element = pagesRef.current;
@@ -76,6 +90,31 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
   }, [currentIndex, pages.length, onProgress, onProgressLabel]);
 
   useEffect(() => {
+    if (!isJumping) return;
+    window.requestAnimationFrame(() => {
+      jumpInputRef.current?.focus();
+      jumpInputRef.current?.select();
+    });
+  }, [isJumping]);
+
+  useEffect(() => {
+    if (!pages.length) return;
+    const preloadIndexes = new Set<number>();
+    for (let index = currentIndex - spreadSize; index < currentIndex; index += 1) {
+      if (index >= 0) preloadIndexes.add(index);
+    }
+    for (let index = currentIndex + spreadSize; index < currentIndex + spreadSize * 2; index += 1) {
+      if (index < pages.length) preloadIndexes.add(index);
+    }
+    for (const index of preloadIndexes) {
+      const page = pages[index];
+      if (!page?.assetId) continue;
+      const image = new window.Image();
+      image.src = window.ereader.getAssetUrl(page.assetId);
+    }
+  }, [currentIndex, pages, spreadSize]);
+
+  useEffect(() => {
     function handleKey(event: KeyboardEvent) {
       if (event.key === "ArrowRight") {
         book.preferences.readingDirection === "rtl" ? goPrevious() : goNext();
@@ -96,11 +135,61 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
     setCurrentIndex((index) => Math.max(0, index - spreadSize));
   }
 
+  function handleWheel(event: WheelEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (event.ctrlKey || event.metaKey || target.closest("input")) return;
+    if (Math.abs(event.deltaY) < 4 || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+
+    event.preventDefault();
+    wheelDeltaRef.current += event.deltaY;
+    if (Math.abs(wheelDeltaRef.current) < WHEEL_PAGE_THRESHOLD) return;
+
+    const now = Date.now();
+    if (now - lastWheelAtRef.current < WHEEL_COOLDOWN_MS) {
+      wheelDeltaRef.current = 0;
+      return;
+    }
+
+    if (wheelDeltaRef.current > 0) {
+      goNext();
+    } else {
+      goPrevious();
+    }
+    lastWheelAtRef.current = now;
+    wheelDeltaRef.current = 0;
+  }
+
+  function openPageJump() {
+    setJumpValue(String(currentIndex + 1));
+    setIsJumping(true);
+  }
+
+  function applyPageJump() {
+    const parsed = Number.parseInt(jumpValue, 10);
+    if (Number.isFinite(parsed)) {
+      const nextPage = Math.max(1, Math.min(pages.length, parsed));
+      setCurrentIndex(alignToSpreadStart(nextPage - 1, spreadSize));
+    }
+    setIsJumping(false);
+  }
+
+  function handleJumpKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyPageJump();
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsJumping(false);
+    }
+  }
+
   if (error) return <div className="reader-error">{error}</div>;
   if (!pages.length) return <div className="reader-loading">正在读取页面缓存...</div>;
 
   return (
-    <div className="comic-reader">
+    <div className="comic-reader" onWheel={handleWheel} title="滚轮上下翻页，方向键左右翻页">
       <button className="page-turn left" onClick={goPrevious} disabled={currentIndex <= 0}>
         <ChevronLeft size={22} />
       </button>
@@ -113,7 +202,21 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
         <ChevronRight size={22} />
       </button>
       <div className="floating-page-indicator">
-        {currentIndex + 1}/{pages.length}
+        {isJumping ? (
+          <input
+            ref={jumpInputRef}
+            value={jumpValue}
+            onChange={(event) => setJumpValue(event.target.value)}
+            onKeyDown={handleJumpKeyDown}
+            onBlur={applyPageJump}
+            inputMode="numeric"
+            aria-label="跳转页码"
+          />
+        ) : (
+          <button type="button" onClick={openPageJump} title="跳转页码">
+            {currentIndex + 1}/{pages.length}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -156,4 +259,9 @@ function getContainedSize(sourceWidth: number, sourceHeight: number, maxWidth: n
     width: Math.max(1, Math.floor(sourceWidth * scale)),
     height: Math.max(1, Math.floor(sourceHeight * scale))
   };
+}
+
+function alignToSpreadStart(index: number, spreadSize: number) {
+  if (spreadSize <= 1) return index;
+  return Math.max(0, Math.floor(index / spreadSize) * spreadSize);
 }
