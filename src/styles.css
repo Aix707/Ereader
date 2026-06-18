@@ -28,6 +28,15 @@ input {
 
 button {
   border: 0;
+  -webkit-app-region: no-drag;
+}
+
+input,
+.search-box,
+.segmented-control,
+.size-tools,
+.reader-tools {
+  -webkit-app-region: no-drag;
 }
 
 .app-shell,
@@ -41,7 +50,66 @@ button {
 
 .app-shell {
   display: grid;
+  grid-template-rows: 34px 1fr;
   grid-template-columns: 252px 1fr;
+}
+
+.app-titlebar {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid #e4ddd2;
+  background: rgba(250, 248, 243, 0.96);
+  -webkit-app-region: drag;
+}
+
+.app-titlebar-brand {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: #5f564a;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.window-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  height: 34px;
+  margin-left: 2px;
+  padding: 2px;
+  border: 1px solid #d9d0c1;
+  border-radius: 8px;
+  background: #f7f1e8;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls button {
+  display: inline-flex;
+  width: 31px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: #5f564a;
+  background: transparent;
+  cursor: pointer;
+}
+
+.window-controls button:hover {
+  background: #ece5d9;
+}
+
+.window-controls button.close:hover {
+  color: #fffdf9;
+  background: #b84d42;
 }
 
 .library-sidebar {
@@ -479,22 +547,25 @@ button {
 }
 
 .reader-shell {
+  position: relative;
   display: grid;
-  grid-template-rows: 64px 1fr 32px;
+  grid-template-rows: 48px 1fr;
 }
 
 .reader-toolbar {
   justify-content: space-between;
-  gap: 18px;
+  gap: 10px;
   min-width: 0;
-  padding: 10px 14px;
+  padding: 6px 8px 6px 12px;
   border-bottom: 1px solid #ded6c9;
   background: rgba(255, 253, 249, 0.96);
+  -webkit-app-region: drag;
 }
 
 .reader-left-tools {
+  flex: 1 1 auto;
   min-width: 0;
-  gap: 12px;
+  gap: 10px;
 }
 
 .reader-title {
@@ -503,8 +574,8 @@ button {
 
 .reader-title h1 {
   overflow: hidden;
-  max-width: 34vw;
-  font-size: 17px;
+  max-width: 42vw;
+  font-size: 16px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -513,23 +584,24 @@ button {
 .reader-title span {
   display: block;
   overflow: hidden;
-  max-width: 34vw;
+  max-width: 42vw;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .reader-tools {
+  flex: 0 1 auto;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
 .segmented-control {
   display: flex;
   align-items: center;
-  height: 36px;
-  padding: 3px;
+  height: 34px;
+  padding: 2px;
   border: 1px solid #d9d0c1;
   border-radius: 8px;
   background: #f7f1e8;
@@ -537,7 +609,7 @@ button {
 
 .segmented-control button {
   min-height: 28px;
-  padding: 0 10px;
+  padding: 0 9px;
   border-radius: 6px;
   color: #6c6458;
   background: transparent;
@@ -548,6 +620,10 @@ button {
   color: #30291e;
   background: #fffdf9;
   box-shadow: 0 3px 12px rgba(72, 60, 42, 0.1);
+}
+
+.segmented-label {
+  white-space: nowrap;
 }
 
 .size-tools {
@@ -568,13 +644,23 @@ button {
 }
 
 .reader-status {
+  position: absolute;
+  z-index: 6;
+  left: 12px;
+  bottom: 10px;
   gap: 8px;
+  max-width: min(680px, calc(100% - 132px));
   min-width: 0;
-  padding: 0 14px;
-  border-top: 1px solid #e3dbcf;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #d7cebf;
+  border-radius: 999px;
   color: #82796d;
-  background: rgba(250, 248, 243, 0.92);
+  background: rgba(255, 253, 249, 0.82);
+  box-shadow: 0 12px 32px rgba(77, 65, 46, 0.08);
   font-size: 12px;
+  opacity: 0.82;
+  pointer-events: none;
 }
 
 .reader-status span {
@@ -687,8 +773,8 @@ button {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  width: calc(100% - 116px);
-  height: calc(100% - 56px);
+  width: calc(100% - 96px);
+  height: calc(100% - 12px);
   overflow: hidden;
 }
 
@@ -840,8 +926,15 @@ button {
   width: 100vw;
   height: 100vh;
   overflow: auto;
-  padding: 24px 30px 40px;
+  padding: 0 30px 40px;
   background: #f7f4ee;
+}
+
+.diagnostics-titlebar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  margin: 0 -30px 24px;
 }
 
 .diagnostics-header {
@@ -963,7 +1056,16 @@ button {
   }
 
   .segmented-control button {
-    padding: 0 7px;
+    width: 31px;
+    padding: 0;
+  }
+
+  .segmented-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
   }
 
   .text-reader-layout {

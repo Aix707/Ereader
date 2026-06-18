@@ -13,8 +13,10 @@ import {
   Trash2
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { MouseEvent } from "react";
 import type { BookItem, BookPatch, LibraryStore } from "../types";
 import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat } from "../lib/format";
+import { WindowControls } from "./WindowControls";
 
 type FilterKey = "all" | "recent" | "novel" | "comic";
 
@@ -70,8 +72,21 @@ export function LibraryView({
   const novels = store.books.filter((book) => book.contentType === "novel").length;
   const comics = store.books.filter((book) => book.contentType === "comic").length;
 
+  function handleTitlebarDoubleClick(event: MouseEvent<HTMLElement>) {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, .window-controls")) return;
+    window.ereader.windowControls.toggleMaximize().catch(() => undefined);
+  }
+
   return (
     <main className="app-shell">
+      <header className="app-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
+        <div className="app-titlebar-brand">
+          <BookOpen size={15} />
+          <span>Ereader</span>
+        </div>
+        <WindowControls />
+      </header>
       <aside className="library-sidebar">
         <div className="brand-block">
           <div className="brand-mark">

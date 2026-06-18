@@ -11,8 +11,10 @@ import {
   Rows3
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { PageFlowReader } from "./readers/PageFlowReader";
 import { TextFlowReader } from "./readers/TextFlowReader";
+import { WindowControls } from "./WindowControls";
 import type { BookItem, BookPatch, ContentType, PageSpread, ReaderPreferences, ReadingDirection, ReadingProgress } from "../types";
 import { formatPercent, labelForContentType, labelForFormat } from "../lib/format";
 
@@ -58,9 +60,15 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
   const isReady = book.importStatus === "ready" || !book.importStatus;
   const usePageReader = book.contentType === "comic" || book.format === "pdf" || book.format === "image-folder";
 
+  function handleToolbarDoubleClick(event: MouseEvent<HTMLElement>) {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, .segmented-control, .window-controls")) return;
+    window.ereader.windowControls.toggleMaximize().catch(() => undefined);
+  }
+
   return (
     <main className="reader-shell">
-      <header className="reader-toolbar">
+      <header className="reader-toolbar" onDoubleClick={handleToolbarDoubleClick}>
         <div className="reader-left-tools">
           <button className="toolbar-button" onClick={onBack} title="返回书架">
             <ArrowLeft size={18} />
@@ -68,7 +76,8 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
           <div className="reader-title">
             <h1>{book.title}</h1>
             <span>
-              {labelForFormat(book.format)} · {labelForContentType(book.contentType)} · {progressLabel}
+              {labelForFormat(book.format)} · {labelForContentType(book.contentType)}
+              {!isComic && ` · ${progressLabel}`}
             </span>
           </div>
         </div>
@@ -125,6 +134,7 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
               </button>
             </div>
           )}
+          <WindowControls />
         </div>
       </header>
 
@@ -178,7 +188,7 @@ function SegmentedControl({
           onClick={() => onChange(option.value)}
         >
           {option.icon}
-          {option.label}
+          <span className="segmented-label">{option.label}</span>
         </button>
       ))}
     </div>

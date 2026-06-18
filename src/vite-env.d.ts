@@ -16,6 +16,13 @@ declare global {
       getAssetDataUrl: (assetId: number) => Promise<string>;
       rebuildBook: (id: string) => Promise<BookItem>;
       getDiagnostics: () => Promise<DiagnosticsSummary>;
+      windowControls: {
+        minimize: () => Promise<void>;
+        toggleMaximize: () => Promise<{ isMaximized: boolean }>;
+        close: () => Promise<void>;
+        getState: () => Promise<{ isMaximized: boolean }>;
+        onStateChanged: (callback: (state: { isMaximized: boolean }) => void) => () => void;
+      };
     };
   }
 }

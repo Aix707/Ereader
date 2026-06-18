@@ -1,6 +1,8 @@
 import { ArrowLeft, Database, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { MouseEvent } from "react";
 import type { DiagnosticsSummary } from "../types";
+import { WindowControls } from "./WindowControls";
 
 interface DiagnosticsViewProps {
   onBack: () => void;
@@ -26,8 +28,21 @@ export function DiagnosticsView({ onBack, onRebuild }: DiagnosticsViewProps) {
     return () => window.clearInterval(timer);
   }, []);
 
+  function handleTitlebarDoubleClick(event: MouseEvent<HTMLElement>) {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, .window-controls")) return;
+    window.ereader.windowControls.toggleMaximize().catch(() => undefined);
+  }
+
   return (
     <main className="diagnostics-shell">
+      <header className="app-titlebar diagnostics-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
+        <div className="app-titlebar-brand">
+          <Database size={15} />
+          <span>Ereader</span>
+        </div>
+        <WindowControls />
+      </header>
       <header className="diagnostics-header">
         <button className="toolbar-button" onClick={onBack} title="返回书架">
           <ArrowLeft size={18} />

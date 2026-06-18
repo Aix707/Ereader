@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -21,6 +21,7 @@ function createWindow() {
     height: 860,
     minWidth: 980,
     minHeight: 660,
+    frame: false,
     backgroundColor: "#f7f4ee",
     title: "Ereader",
     webPreferences: {
@@ -29,6 +30,10 @@ function createWindow() {
       nodeIntegration: false
     }
   });
+  Menu.setApplicationMenu(null);
+
+  mainWindow.on("maximize", sendWindowState);
+  mainWindow.on("unmaximize", sendWindowState);
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
@@ -36,6 +41,11 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
+}
+
+function sendWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("window:stateChanged", { isMaximized: mainWindow.isMaximized() });
 }
 
 app.whenReady().then(() => {
@@ -172,3 +182,23 @@ ipcMain.handle("cache:rebuildBook", (_event, id) => {
 });
 
 ipcMain.handle("diagnostics:summary", () => repo.diagnosticsSummary());
+
+ipcMain.handle("window:minimize", () => {
+  mainWindow?.minimize();
+});
+
+ipcMain.handle("window:toggleMaximize", () => {
+  if (!mainWindow) return { isMaximized: false };
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+  return { isMaximized: mainWindow.isMaximized() };
+});
+
+ipcMain.handle("window:close", () => {
+  mainWindow?.close();
+});
+
+ipcMain.handle("window:getState", () => ({ isMaximized: Boolean(mainWindow?.isMaximized()) }));

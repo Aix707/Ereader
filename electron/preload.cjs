@@ -11,5 +11,16 @@ contextBridge.exposeInMainWorld("ereader", {
   getPageUnits: (id) => ipcRenderer.invoke("content:getPageUnits", id),
   getAssetDataUrl: (assetId) => ipcRenderer.invoke("content:getAssetDataUrl", assetId),
   rebuildBook: (id) => ipcRenderer.invoke("cache:rebuildBook", id),
-  getDiagnostics: () => ipcRenderer.invoke("diagnostics:summary")
+  getDiagnostics: () => ipcRenderer.invoke("diagnostics:summary"),
+  windowControls: {
+    minimize: () => ipcRenderer.invoke("window:minimize"),
+    toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
+    close: () => ipcRenderer.invoke("window:close"),
+    getState: () => ipcRenderer.invoke("window:getState"),
+    onStateChanged: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on("window:stateChanged", listener);
+      return () => ipcRenderer.removeListener("window:stateChanged", listener);
+    }
+  }
 });
