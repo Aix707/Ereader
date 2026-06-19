@@ -318,68 +318,100 @@ function BookCard({
   const importStatus = book.importStatus || "ready";
   const canOpen = isReady(book);
   const canToggleContent = book.format === "pdf" || book.format === "epub";
+  const cardRef = useRef<HTMLElement>(null);
+  const [panelSide, setPanelSide] = useState<"left" | "right">("right");
+  const lastReadText = book.lastOpenedAt ? `最近 ${formatRelativeDate(book.lastOpenedAt)}` : "尚未阅读";
+
+  function updatePanelSide() {
+    const rect = cardRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const panelWidth = 306;
+    const gap = 14;
+    const rightSpace = window.innerWidth - rect.right;
+    const leftSpace = rect.left;
+    setPanelSide(rightSpace < panelWidth + gap && leftSpace > rightSpace ? "left" : "right");
+  }
 
   return (
-    <article className={`book-card ${importStatus !== "ready" ? "has-import-state" : ""}`}>
-      <button className="book-open-area" onClick={onOpen} disabled={!canOpen}>
-        <BookCover book={book} progressValue={progressValue} />
-        <div className="book-meta">
-          <div className="book-title-row">
+    <article
+      ref={cardRef}
+      className={`book-card panel-${panelSide} ${importStatus !== "ready" ? "has-import-state" : ""}`}
+      onFocus={updatePanelSide}
+      onMouseEnter={updatePanelSide}
+    >
+      <button className="book-open-area" onClick={onOpen} disabled={!canOpen} title={book.path}>
+        <div className="book-cover-row">
+          <BookCover book={book} progressValue={progressValue} />
+          <div className="book-title-rail">
             <h3 title={book.title}>{book.title}</h3>
           </div>
-          <p title={book.path}>{book.path}</p>
-          <div className="book-badges">
-            <span className="pill">{labelForContentType(book.contentType)}</span>
-            <span className={`status-pill ${importStatus}`}>{statusLabel(importStatus)}</span>
-            <span className="progress-text">{book.unitCount || 0} 单元 · {progress}</span>
-          </div>
-          {importStatus !== "ready" && (
-            <div className="card-import-status">
-              <span>{statusLabel(importStatus)}</span>
-              <div className="mini-meter">
-                <i style={{ width: `${Math.round((book.importProgress || 0) * 100)}%` }} />
-              </div>
-            </div>
-          )}
-          {book.importError && <p className="card-error">{book.importError}</p>}
         </div>
+        <div className="book-card-summary">
+          <span className="pill">{labelForContentType(book.contentType)}</span>
+          <span className={`status-pill ${importStatus}`}>{statusLabel(importStatus)}</span>
+          <span className="progress-text">{progress}</span>
+        </div>
+        {importStatus !== "ready" && (
+          <div className="card-import-status">
+            <span>{statusLabel(importStatus)}</span>
+            <div className="mini-meter">
+              <i style={{ width: `${Math.round((book.importProgress || 0) * 100)}%` }} />
+            </div>
+          </div>
+        )}
+        {book.importError && <p className="card-error">{book.importError}</p>}
       </button>
 
-      <div className="book-card-actions" aria-label={`${book.title} 操作`}>
-        {canOpen && (
-          <button className="icon-button primary-icon" onClick={onOpen} title="继续阅读">
-            <Play size={16} />
+      <div className="book-hover-panel" aria-label={`${book.title} 详情`}>
+        <div className="book-hover-heading">
+          <strong title={book.title}>{book.title}</strong>
+          <span className={`status-pill ${importStatus}`}>{statusLabel(importStatus)}</span>
+        </div>
+        <p className="book-hover-path" title={book.path}>{book.path}</p>
+        <div className="book-detail-grid">
+          <span>格式</span>
+          <strong>{labelForFormat(book.format)}</strong>
+          <span>模式</span>
+          <strong>{labelForContentType(book.contentType)}</strong>
+          <span>内容</span>
+          <strong>{book.unitCount || 0} 单元 · {book.assetCount || 0} 资产</strong>
+          <span>进度</span>
+          <strong>{progress}</strong>
+          <span>阅读</span>
+          <strong>{lastReadText}</strong>
+        </div>
+        {book.importError && <p className="card-error">{book.importError}</p>}
+        <div className="book-card-actions" aria-label={`${book.title} 操作`}>
+          {canOpen && (
+            <button className="icon-button primary-icon" onClick={onOpen} title="继续阅读">
+              <Play size={16} />
+            </button>
+          )}
+          {canToggleContent && (
+            <button
+              className="icon-button"
+              onClick={() =>
+                onUpdateBook({ contentType: book.contentType === "novel" ? "comic" : "novel" })
+              }
+              title={book.contentType === "novel" ? "切换为漫画模式" : "切换为小说模式"}
+            >
+              {book.contentType === "novel" ? <Images size={16} /> : <FileText size={16} />}
+            </button>
+          )}
+          {(importStatus === "queued" || importStatus === "processing") && (
+            <button className="icon-button" onClick={onCancelImport} title="取消导入">
+              <CircleStop size={16} />
+            </button>
+          )}
+          {(importStatus === "error" || importStatus === "stale" || importStatus === "cancelled") && (
+            <button className="icon-button" onClick={onRebuild} title="重建数据库内容">
+              <RefreshCw size={16} />
+            </button>
+          )}
+          <button className="icon-button" onClick={onRemove} title="从书库移除">
+            <Trash2 size={16} />
           </button>
-        )}
-        {canToggleContent && (
-          <button
-            className="icon-button"
-            onClick={() =>
-              onUpdateBook({ contentType: book.contentType === "novel" ? "comic" : "novel" })
-            }
-            title={book.contentType === "novel" ? "切换为漫画模式" : "切换为小说模式"}
-          >
-            {book.contentType === "novel" ? <Images size={16} /> : <FileText size={16} />}
-          </button>
-        )}
-        {(importStatus === "queued" || importStatus === "processing") && (
-          <button className="icon-button" onClick={onCancelImport} title="取消导入">
-            <CircleStop size={16} />
-          </button>
-        )}
-        {(importStatus === "error" || importStatus === "stale" || importStatus === "cancelled") && (
-          <button className="icon-button" onClick={onRebuild} title="重建数据库内容">
-            <RefreshCw size={16} />
-          </button>
-        )}
-        <button className="icon-button" onClick={onRemove} title="从书库移除">
-          <Trash2 size={16} />
-        </button>
-      </div>
-
-      <div className="book-subline">
-        <span>{book.lastOpenedAt ? `最近 ${formatRelativeDate(book.lastOpenedAt)}` : "尚未阅读"}</span>
-        <span>{labelForFormat(book.format)}</span>
+        </div>
       </div>
     </article>
   );
