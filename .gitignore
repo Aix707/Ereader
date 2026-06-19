@@ -1,6 +1,7 @@
 AGENTS.md
 node_modules/
 dist/
+release/
 dev-server.*.log
 npm-debug.log*
 .DS_Store

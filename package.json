@@ -2,6 +2,7 @@
   "name": "ereader",
   "version": "0.1.0",
   "private": true,
+  "author": "Aix707",
   "description": "A local Windows reader for novels, manga, PDF, EPUB, TXT, and image folders.",
   "main": "electron/main.cjs",
   "type": "module",
@@ -10,7 +11,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "doctor": "electron scripts/doctor.cjs",
-    "rebuild:native": "electron-rebuild -f -w better-sqlite3"
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
+    "package:win": "set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win nsis --x64 --publish never --config.npmRebuild=false",
+    "release:win": "electron-builder --win nsis --x64 --publish always"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.100",
@@ -34,7 +37,53 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^40.10.4",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.7.2",
     "vite": "^6.0.6"
+  },
+  "build": {
+    "appId": "com.aix707.ereader",
+    "productName": "Ereader",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/app-icon.png",
+      "artifactName": "${productName}-${version}-Setup-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ereader"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Aix707",
+        "repo": "Ereader",
+        "releaseType": "draft"
+      }
+    ]
   }
 }

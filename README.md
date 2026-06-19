@@ -72,6 +72,24 @@ git diff --check
 
 `AGENTS.md` 是本地 Codex 协作说明，和 `dist/`、`node_modules/`、开发日志一样由 `.gitignore` 忽略，不作为 GitHub 提交内容。
 
+## 打包与发布
+
+```powershell
+npm run package:win
+```
+
+生成未签名 Windows x64 NSIS 安装包，输出到 `release/`。安装包暂不做代码签名，因此 Windows 可能显示未知发布者提示。
+本地打包脚本使用 npm 镜像源下载 Electron/electron-builder 二进制资源，并跳过 native rebuild；如果更换 Electron 或 native 依赖版本，先运行 `npm run rebuild:native`。
+
+GitHub Release 通过 tag 触发：
+
+```powershell
+git tag v0.1.0
+git push origin main --tags
+```
+
+GitHub Actions 会在 Windows runner 上执行构建，并创建 draft Release。确认草稿内容和安装包后，再到 GitHub 页面手动发布。
+
 ## 数据存储
 
 应用不复制原始书籍文件。导入时会读取源文件或源文件夹，处理后的阅读内容写入 SQLite：
