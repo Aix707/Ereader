@@ -9,18 +9,15 @@
   -webkit-font-smoothing: antialiased;
 
   --bg: #eef4fb;
-  --bg-soft: #f7fbff;
   --surface: rgba(255, 255, 255, 0.18);
   --surface-soft: rgba(255, 255, 255, 0.08);
   --surface-strong: rgba(255, 255, 255, 0.34);
-  --surface-solid: #fbfdff;
   --line: rgba(255, 255, 255, 0.78);
   --line-strong: rgba(255, 255, 255, 0.96);
   --text: #1f2937;
   --muted: #66758a;
   --muted-soft: #8a98aa;
   --accent: #2f6fd8;
-  --accent-hover: #245fc1;
   --accent-soft: rgba(47, 111, 216, 0.12);
   --blue-glass: rgba(101, 169, 255, 0.22);
   --blue-glass-strong: rgba(94, 158, 246, 0.34);
@@ -38,12 +35,10 @@
   --shadow-soft: 0 20px 56px rgba(46, 70, 112, 0.14), inset 0 1px rgba(255, 255, 255, 0.9);
   --shadow-control: 0 12px 30px rgba(46, 70, 112, 0.12), inset 0 1px rgba(255, 255, 255, 0.92);
   --radius-lg: 18px;
-  --radius-card: 16px;
   --radius-xl: 22px;
   --radius-md: 14px;
   --radius-sm: 10px;
   --radius-xs: 6px;
-  --font-xxs: 10px;
   --font-xs: 11px;
   --font-sm: 12px;
   --font-md: 13px;
@@ -58,10 +53,8 @@
   --control-md: 32px;
   --control-lg: 36px;
   --control-xl: 40px;
-  --icon-xs: 14px;
   --icon-sm: 15px;
   --icon-md: 16px;
-  --icon-lg: 18px;
   --icon-xl: 22px;
   --icon-empty: 34px;
   --gap-xs: 6px;
@@ -78,7 +71,6 @@
   --gallery-panel-w: 292px;
   --cover-title-rail-w: 34px;
   --cover-w: 100%;
-  --cover-h: auto;
 }
 
 * {

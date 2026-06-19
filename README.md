@@ -61,6 +61,17 @@ npm run rebuild:native
 
 为当前 Electron 版本重建 `better-sqlite3` native 依赖。
 
+## 提交前检查
+
+```powershell
+npm run build
+npm run doctor
+npm audit --audit-level=moderate
+git diff --check
+```
+
+`AGENTS.md` 是本地 Codex 协作说明，和 `dist/`、`node_modules/`、开发日志一样由 `.gitignore` 忽略，不作为 GitHub 提交内容。
+
 ## 数据存储
 
 应用不复制原始书籍文件。导入时会读取源文件或源文件夹，处理后的阅读内容写入 SQLite：

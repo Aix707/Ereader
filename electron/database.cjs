@@ -84,6 +84,16 @@ function normalizePrefs(preferences = {}) {
   };
 }
 
+function publicPrefs(preferences = {}) {
+  const prefs = normalizePrefs(preferences);
+  return {
+    fontSize: prefs.fontSize,
+    lineHeight: prefs.lineHeight,
+    pageSpread: prefs.pageSpread,
+    readingDirection: prefs.readingDirection
+  };
+}
+
 function createRepository(userDataPath) {
   fs.mkdirSync(userDataPath, { recursive: true });
   const dbPath = path.join(userDataPath, "library.sqlite");
@@ -232,7 +242,7 @@ function createRepository(userDataPath) {
   };
 
   function rowToBook(row) {
-    const prefs = normalizePrefs(statements.prefsById.get(row.id) || {});
+    const prefs = publicPrefs(statements.prefsById.get(row.id) || {});
     const progress = normalizeProgress(statements.progressById.get(row.id) || {});
     const cover = statements.coverById.get(row.id);
     const coverExcerpt = row.source_format === "txt" && !cover ? textCoverExcerpt(row.id) : null;
@@ -419,7 +429,13 @@ function createRepository(userDataPath) {
          WHERE id = ?`
       ).run(patch.title || null, patch.lastOpenedAt || null, nowIso(), bookId);
     }
-    if (patch.preferences) upsertPreferences(bookId, { ...current.preferences, ...patch.preferences });
+    if (patch.preferences) {
+      upsertPreferences(bookId, {
+        ...(statements.prefsById.get(bookId) || {}),
+        ...current.preferences,
+        ...patch.preferences
+      });
+    }
     if (patch.progress) upsertProgress(bookId, { ...current.progress, ...patch.progress });
     return getBook(bookId);
   }
@@ -614,7 +630,7 @@ function createRepository(userDataPath) {
 
   function booksNeedingImport() {
     return db
-      .prepare("SELECT id FROM books WHERE import_status IN ('queued', 'error', 'stale')")
+      .prepare("SELECT id FROM books WHERE import_status IN ('queued', 'processing', 'error', 'stale')")
       .all()
       .map((row) => row.id);
   }
