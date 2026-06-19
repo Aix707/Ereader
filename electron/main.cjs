@@ -82,10 +82,21 @@ function registerAssetProtocol() {
       }
       const asset = repo.getAsset(assetId);
       if (!asset) return new Response("Asset not found", { status: 404 });
+      const etag = `"asset-${asset.id}-${asset.data.length}"`;
+      if (request.headers.get("if-none-match") === etag) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            "Cache-Control": "public, max-age=31536000, immutable",
+            ETag: etag
+          }
+        });
+      }
       return new Response(asset.data, {
         headers: {
           "Content-Type": asset.mime,
-          "Cache-Control": "no-store",
+          "Cache-Control": "public, max-age=31536000, immutable",
+          ETag: etag,
           "Content-Length": String(asset.data.length)
         }
       });

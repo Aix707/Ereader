@@ -1349,6 +1349,22 @@ input,
   overflow: hidden;
 }
 
+.comic-preload-layer {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.comic-preload-layer img {
+  width: 1px;
+  height: 1px;
+}
+
 .image-page-holder {
   display: grid;
   flex: 0 1 auto;
