@@ -12,7 +12,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "doctor": "electron scripts/doctor.cjs",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
-    "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item -Recurse -Force release -ErrorAction SilentlyContinue\"",
+    "clean:release": "node scripts/clean-release.cjs",
     "package:win": "npm run clean:release && set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win nsis --x64 --publish never --config.npmRebuild=false",
     "release:win": "npm run clean:release && electron-builder --win nsis --x64 --publish never"
   },
