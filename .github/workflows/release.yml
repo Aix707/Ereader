@@ -5,9 +5,18 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.0"
+        required: true
+        default: "v0.1.0"
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   windows:
@@ -17,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -30,7 +41,40 @@ jobs:
       - name: Build renderer
         run: npm run build
 
-      - name: Package and publish draft release
+      - name: Package Windows installer
         run: npm run release:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare draft release
+        id: release_context
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.eventName === "workflow_dispatch"
+              ? core.getInput("tag")
+              : context.ref.replace("refs/tags/", "");
+            const { owner, repo } = context.repo;
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner,
+              repo,
+              per_page: 100
+            });
+            for (const release of releases) {
+              if (release.draft && release.tag_name === tag) {
+                await github.rest.repos.deleteRelease({
+                  owner,
+                  repo,
+                  release_id: release.id
+                });
+              }
+            }
+            core.setOutput("tag", tag);
+
+      - name: Upload draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_context.outputs.tag }}
+          name: Ereader ${{ steps.release_context.outputs.tag }}
+          draft: true
+          fail_on_unmatched_files: true
+          files: |
+            release/Ereader-*-Setup-x64.exe

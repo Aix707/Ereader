@@ -80,6 +80,7 @@ npm run package:win
 
 生成未签名 Windows x64 NSIS 安装包，输出到 `release/`。安装包暂不做代码签名，因此 Windows 可能显示未知发布者提示。
 本地打包脚本使用 npm 镜像源下载 Electron/electron-builder 二进制资源，并跳过 native rebuild；如果更换 Electron 或 native 依赖版本，先运行 `npm run rebuild:native`。
+打包内容只包含应用代码、前端产物、图标和运行依赖；已导入并解析的书籍数据库仍位于用户数据目录，不会进入安装包。
 
 GitHub Release 通过 tag 触发：
 
@@ -88,7 +89,7 @@ git tag v0.1.0
 git push origin main --tags
 ```
 
-GitHub Actions 会在 Windows runner 上执行构建，并创建 draft Release。确认草稿内容和安装包后，再到 GitHub 页面手动发布。
+GitHub Actions 会在 Windows runner 上执行构建，清理同 tag 的旧 draft Release，再创建一个新的 draft Release。确认草稿内容和安装包后，再到 GitHub 页面手动发布。
 
 ## 数据存储
 
