@@ -37,19 +37,19 @@ export function DiagnosticsView({ onBack, onRebuild }: DiagnosticsViewProps) {
   return (
     <main className="diagnostics-shell">
       <header className="app-titlebar diagnostics-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
-        <div className="app-titlebar-brand">
+        <div className="topbar-title-island diagnostics-title-island">
+          <button className="topbar-island-button" onClick={onBack} title="返回书架" aria-label="返回书架">
+            <ArrowLeft size={17} />
+          </button>
           <Database size={15} />
-          <span>Ereader</span>
+          <span>数据库诊断</span>
         </div>
         <WindowControls />
       </header>
       <header className="diagnostics-header">
-        <button className="toolbar-button" onClick={onBack} title="返回书架">
-          <ArrowLeft size={18} />
-        </button>
         <div>
           <p className="eyebrow">Diagnostics</p>
-          <h1>数据库诊断</h1>
+          <h1>处理与资产状态</h1>
         </div>
         <button className="secondary-action compact" onClick={refresh}>
           <RefreshCw size={16} />

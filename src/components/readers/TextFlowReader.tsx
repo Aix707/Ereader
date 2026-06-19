@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { BookItem, ReadingProgress, TextUnit } from "../../types";
 import { formatPercent } from "../../lib/format";
 
@@ -12,6 +13,7 @@ interface TextFlowReaderProps {
 const VIRTUAL_OVERSCAN_UNITS = 36;
 const TEXT_PAGE_MAX_WIDTH = 800;
 const TEXT_PAGE_HORIZONTAL_PADDING = 128;
+const TEXT_PAGE_BOTTOM_SAFETY = 180;
 
 export function TextFlowReader({ book, showToc, onProgress, onProgressLabel }: TextFlowReaderProps) {
   const [units, setUnits] = useState<TextUnit[]>([]);
@@ -86,6 +88,11 @@ export function TextFlowReader({ book, showToc, onProgress, onProgressLabel }: T
     () => units.slice(visibleRange.start, visibleRange.end),
     [units, visibleRange.end, visibleRange.start]
   );
+  const progressRatio = useMemo(() => {
+    const scrollable = Math.max(1, virtualHeight - viewportSize.height);
+    return clamp(scrollTop / scrollable);
+  }, [scrollTop, viewportSize.height, virtualHeight]);
+  const spacerHeight = virtualHeight + TEXT_PAGE_BOTTOM_SAFETY;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -131,6 +138,53 @@ export function TextFlowReader({ book, showToc, onProgress, onProgressLabel }: T
     onProgress({ kind: "scroll", scrollRatio: ratio, percent: ratio });
   }
 
+  function scrollToRatio(ratio: number) {
+    const container = containerRef.current;
+    if (!container) return;
+    const scrollable = Math.max(0, virtualHeight - container.clientHeight);
+    const nextScrollTop = clamp(ratio) * scrollable;
+    container.scrollTop = nextScrollTop;
+    setScrollTop(nextScrollTop);
+  }
+
+  function updateProgressFromPointer(event: ReactPointerEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.height <= 0) return;
+    scrollToRatio((event.clientY - rect.top) / rect.height);
+  }
+
+  function handleProgressPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateProgressFromPointer(event);
+  }
+
+  function handleProgressPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if ((event.buttons & 1) !== 1) return;
+    updateProgressFromPointer(event);
+  }
+
+  function handleProgressKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Home") {
+      event.preventDefault();
+      scrollToRatio(0);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      scrollToRatio(1);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "PageDown") {
+      event.preventDefault();
+      scrollToRatio(progressRatio + (event.key === "PageDown" ? 0.08 : 0.02));
+      return;
+    }
+    if (event.key === "ArrowUp" || event.key === "PageUp") {
+      event.preventDefault();
+      scrollToRatio(progressRatio - (event.key === "PageUp" ? 0.08 : 0.02));
+    }
+  }
+
   function jumpTo(unitIndex: number) {
     const container = containerRef.current;
     if (!container) return;
@@ -169,7 +223,7 @@ export function TextFlowReader({ book, showToc, onProgress, onProgressLabel }: T
             lineHeight: book.preferences.lineHeight
           }}
         >
-          <div className="text-virtual-spacer" style={{ height: virtualHeight }}>
+          <div className="text-virtual-spacer" style={{ height: spacerHeight }}>
             <div
               className="text-virtual-window"
               style={{ transform: `translateY(${virtualOffsets[visibleRange.start] || 0}px)` }}
@@ -181,6 +235,24 @@ export function TextFlowReader({ book, showToc, onProgress, onProgressLabel }: T
           </div>
         </div>
       </article>
+      <div
+        className="text-progress-slider"
+        role="slider"
+        tabIndex={0}
+        aria-label="阅读进度"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progressRatio * 100)}
+        title={`阅读进度 ${formatPercent(progressRatio)}`}
+        onPointerDown={handleProgressPointerDown}
+        onPointerMove={handleProgressPointerMove}
+        onKeyDown={handleProgressKeyDown}
+      >
+        <span className="text-progress-track">
+          <i style={{ height: `${progressRatio * 100}%` }} />
+          <b style={{ top: `${progressRatio * 100}%` }} />
+        </span>
+      </div>
     </div>
   );
 }
@@ -245,16 +317,28 @@ function estimateUnitHeight(
   }
 
   const text = unit.text || stripHtml(unit.html || "");
-  const charsPerLine = Math.max(16, Math.floor(contentWidth / Math.max(8, fontSize * 0.58)));
+  const charsPerLine = Math.max(12, Math.floor(contentWidth / Math.max(10, fontSize * 0.98)));
   const lines = text
     .split(/\n/)
-    .map((line) => Math.max(1, Math.ceil(line.trim().length / charsPerLine)))
+    .map((line) => Math.max(1, Math.ceil(measureTextUnits(line.trim()) / charsPerLine)))
     .reduce((sum, count) => sum + count, 0);
-  return Math.ceil(Math.max(1, lines) * linePx + blockMargin);
+  return Math.ceil(Math.max(1, lines) * linePx + blockMargin * 1.28);
 }
 
 function stripHtml(value: string) {
   return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function measureTextUnits(value: string) {
+  let units = 0;
+  for (const char of value) {
+    units += /[\u1100-\u11ff\u2e80-\ua4cf\uf900-\ufaff\uff00-\uffef]/.test(char) ? 1 : 0.58;
+  }
+  return units;
+}
+
+function clamp(value: number) {
+  return Math.max(0, Math.min(1, value));
 }
 
 function findUnitAtOffset(offsets: number[], target: number) {

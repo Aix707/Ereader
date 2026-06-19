@@ -19,6 +19,10 @@ function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
+function stripHtml(value) {
+  return String(value || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function sourceStats(sourcePath, kind) {
   if (!fs.existsSync(sourcePath)) {
     return {
@@ -201,6 +205,15 @@ function createRepository(userDataPath) {
          ru.unit_index
        LIMIT 1`
     ),
+    coverTextById: db.prepare(
+      `SELECT title, text, html
+       FROM reading_units
+       WHERE book_id = ?
+         AND unit_type IN ('paragraph', 'html')
+         AND (text IS NOT NULL OR html IS NOT NULL OR title IS NOT NULL)
+       ORDER BY unit_index
+       LIMIT 8`
+    ),
     insertDiagnostic: db.prepare(
       "INSERT INTO diagnostics (book_id, level, message, details_json, created_at) VALUES (?, ?, ?, ?, ?)"
     ),
@@ -222,6 +235,7 @@ function createRepository(userDataPath) {
     const prefs = normalizePrefs(statements.prefsById.get(row.id) || {});
     const progress = normalizeProgress(statements.progressById.get(row.id) || {});
     const cover = statements.coverById.get(row.id);
+    const coverExcerpt = row.source_format === "txt" && !cover ? textCoverExcerpt(row.id) : null;
     const stats = sourceStats(row.source_path, row.source_kind);
     const stale =
       row.import_status === "ready" &&
@@ -240,6 +254,7 @@ function createRepository(userDataPath) {
       coverWidth: cover?.coverWidth || null,
       coverHeight: cover?.coverHeight || null,
       coverKind: cover ? "asset" : "generated",
+      coverExcerpt,
       addedAt: row.added_at,
       updatedAt: row.updated_at,
       lastOpenedAt: row.last_opened_at,
@@ -253,6 +268,30 @@ function createRepository(userDataPath) {
       preferences: prefs,
       progress
     };
+  }
+
+  function textCoverExcerpt(bookId) {
+    const rows = statements.coverTextById.all(bookId);
+    const joined = rows
+      .map((row) => stripHtml(row.text || row.html || row.title || ""))
+      .map(cleanCoverText)
+      .filter(
+        (value) =>
+          value.length >= 8 &&
+          /[A-Za-z0-9\u4e00-\u9fff]/.test(value) &&
+          !/^第?[一二三四五六七八九十百千万\d]+[章节卷回话話.、\s]/.test(value)
+      )
+      .join(" ");
+    return joined ? Array.from(joined).slice(0, 72).join("") : null;
+  }
+
+  function cleanCoverText(value) {
+    return value
+      .replace(/[-_=—]{3,}/g, " ")
+      .replace(/[~·•●◆◇]+/g, " ")
+      .replace(/^[\s,，.。:：;；、\-—_=\[\]【】（）()]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function getBook(id) {

@@ -1,13 +1,11 @@
 import {
   ArrowLeft,
-  ArrowLeftRight,
-  ArrowRightLeft,
   BookText,
+  ChevronsLeft,
+  ChevronsRight,
   Columns2,
   Images,
-  Maximize2,
   Minus,
-  Minimize2,
   PanelLeftOpen,
   PanelLeftClose,
   Plus,
@@ -54,13 +52,6 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
       window.clearTimeout(chromeTimer.current);
       chromeTimer.current = null;
     }
-  }, []);
-
-  const toggleFullScreen = useCallback(() => {
-    window.ereader.windowControls
-      .toggleFullScreen()
-      .then((state) => setIsFullScreen(state.isFullScreen))
-      .catch(() => undefined);
   }, []);
 
   const scheduleChromeHide = useCallback(() => {
@@ -116,22 +107,6 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
   }, []);
 
   useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      const target = event.target as HTMLElement;
-      if (event.key === "F11") {
-        event.preventDefault();
-        toggleFullScreen();
-      }
-      if (event.key === "Escape" && isFullScreen && !target.closest("input")) {
-        event.preventDefault();
-        toggleFullScreen();
-      }
-    }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [isFullScreen, toggleFullScreen]);
-
-  useEffect(() => {
     if (!isFullScreen) {
       setChromeVisible(true);
       clearChromeHideTimer();
@@ -144,7 +119,6 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
   const isComic = book.contentType === "comic";
   const isReady = book.importStatus === "ready" || !book.importStatus;
   const usePageReader = book.contentType === "comic" || book.format === "pdf" || book.format === "image-folder";
-  const showTocToggle = !usePageReader;
 
   return (
     <main
@@ -159,10 +133,10 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
         onMouseLeave={scheduleChromeHide}
       >
         <div className="reader-left-tools">
-          <button className="toolbar-button" onClick={onBack} title="返回书架">
-            <ArrowLeft size={18} />
-          </button>
-          <div className="reader-title" title={`${book.title} · ${labelForFormat(book.format)} · ${labelForContentType(book.contentType)}`}>
+          <div className="topbar-title-island reader-title" title={`${book.title} · ${labelForFormat(book.format)} · ${labelForContentType(book.contentType)}`}>
+            <button className="topbar-island-button" onClick={onBack} title="返回书架" aria-label="返回书架">
+              <ArrowLeft size={17} />
+            </button>
             <h1>{book.title}</h1>
           </div>
         </div>
@@ -192,8 +166,8 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
               <SegmentedControl
                 value={book.preferences.readingDirection}
                 options={[
-                  { value: "ltr", label: "左到右", icon: <ArrowLeftRight size={15} /> },
-                  { value: "rtl", label: "右到左", icon: <ArrowRightLeft size={15} /> }
+                  { value: "ltr", label: "左到右阅读", icon: <ChevronsRight size={15} /> },
+                  { value: "rtl", label: "右到左阅读", icon: <ChevronsLeft size={15} /> }
                 ]}
                 onChange={(value) => updatePreference({ readingDirection: value as ReadingDirection })}
               />
@@ -219,13 +193,6 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
               </button>
             </div>
           )}
-          <button
-            className="toolbar-button"
-            onClick={toggleFullScreen}
-            title={isFullScreen ? "退出全屏 (F11)" : "全屏阅读 (F11)"}
-          >
-            {isFullScreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
           <WindowControls />
         </div>
       </header>
@@ -255,9 +222,9 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
         )}
       </section>
 
-      <footer className="reader-status">
-        <div className="reader-status-group">
-          {showTocToggle && (
+      {!usePageReader && (
+        <footer className="reader-status">
+          <div className="reader-status-group">
             <button
               className="reader-status-button"
               onClick={() => setShowToc((value) => !value)}
@@ -266,10 +233,10 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
             >
               {showToc ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
             </button>
-          )}
-          <span>{formatPercent(progressPercent)}</span>
-        </div>
-      </footer>
+            <span>{formatPercent(progressPercent)}</span>
+          </div>
+        </footer>
+      )}
     </main>
   );
 }

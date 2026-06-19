@@ -387,16 +387,28 @@ function BookCard({
 
 function BookCover({ book, progressValue }: { book: BookItem; progressValue: number }) {
   const assetUrl = book.coverAssetId ? window.ereader.getAssetUrl(book.coverAssetId) : null;
+  const isTxtCover = !assetUrl && book.format === "txt";
 
   return (
-    <div className={`book-cover ${book.contentType} ${assetUrl ? "asset-cover" : "generated-cover"}`}>
+    <div
+      className={`book-cover ${book.contentType} ${assetUrl ? "asset-cover" : "generated-cover"}${isTxtCover ? " txt-cover" : ""}`}
+    >
       {assetUrl ? (
         <img src={assetUrl} alt={`${book.title} 封面`} loading="lazy" />
       ) : (
         <div className="generated-cover-content">
-          <span className="generated-cover-mark">{titleMark(book.title)}</span>
-          <strong>{book.title}</strong>
-          <small>{labelForFormat(book.format)}</small>
+          {isTxtCover ? (
+            <>
+              <strong>{book.title}</strong>
+              <p>{book.coverExcerpt || "本地文本阅读"}</p>
+            </>
+          ) : (
+            <>
+              <span className="generated-cover-mark">{titleMark(book.title)}</span>
+              <strong>{book.title}</strong>
+              <small>{labelForFormat(book.format)}</small>
+            </>
+          )}
         </div>
       )}
       <div className="cover-progress" aria-hidden="true">

@@ -15,6 +15,7 @@ const FILE_FORMATS = new Map([
 let mainWindow;
 let repo;
 let importer;
+const APP_ICON = path.join(__dirname, "..", "assets", "app-icon.png");
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -36,6 +37,7 @@ function createWindow() {
     minHeight: 660,
     frame: false,
     backgroundColor: "#eef4fb",
+    icon: APP_ICON,
     title: "Ereader",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -94,6 +96,7 @@ function registerAssetProtocol() {
 }
 
 app.whenReady().then(() => {
+  app.setAppUserModelId("local.ereader");
   repo = createRepository(app.getPath("userData"));
   repo.migrateFromJson(path.join(app.getPath("userData"), "library.json"));
   importer = createWorkerImporter(app.getPath("userData"), repo, {

@@ -31,6 +31,7 @@ export interface BookItem {
   coverWidth?: number | null;
   coverHeight?: number | null;
   coverKind?: "asset" | "generated";
+  coverExcerpt?: string | null;
   addedAt: string;
   updatedAt?: string;
   lastOpenedAt?: string | null;
