@@ -123,10 +123,19 @@ input,
   display: inline-flex;
   min-width: 0;
   align-items: center;
+  height: 32px;
   gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
   color: #415268;
   font-size: 13px;
   font-weight: 700;
+  background: var(--surface);
+  box-shadow: var(--shadow-control);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  -webkit-app-region: no-drag;
 }
 
 .window-controls {
@@ -216,7 +225,6 @@ input,
 }
 
 .brand-block span,
-.reader-title span,
 .book-meta p,
 .book-subline,
 .progress-text,
@@ -879,7 +887,7 @@ input,
 .reader-shell {
   position: relative;
   display: grid;
-  grid-template-rows: 52px 1fr;
+  grid-template-rows: 50px 1fr;
 }
 
 .reader-shell.fullscreen {
@@ -937,7 +945,9 @@ input,
 .reader-title {
   min-width: 0;
   height: 36px;
-  padding: 4px 12px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface);
@@ -951,17 +961,7 @@ input,
   max-width: 42vw;
   font-size: 14px;
   font-weight: 760;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.reader-title span {
-  display: block;
-  overflow: hidden;
-  max-width: 42vw;
-  font-size: 11px;
-  line-height: 1.25;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1027,25 +1027,47 @@ input,
   position: absolute;
   z-index: 6;
   left: 12px;
+  right: 12px;
   bottom: 10px;
-  gap: 8px;
-  max-width: min(680px, calc(100% - 132px));
   min-width: 0;
-  min-height: 30px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
   color: var(--muted);
-  background: var(--surface);
-  box-shadow: var(--shadow-soft);
   font-size: 12px;
-  opacity: 0.88;
   pointer-events: none;
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
   transition:
     opacity 180ms ease,
     transform 180ms ease;
+}
+
+.reader-status-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  pointer-events: auto;
+}
+
+.reader-status-button {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 9px;
+  color: #43566d;
+  background: transparent;
+  cursor: pointer;
+}
+
+.reader-status-button:hover {
+  color: var(--blue-text);
+  background: var(--blue-glass);
 }
 
 .reader-shell.fullscreen .reader-status {
@@ -1065,14 +1087,23 @@ input,
 
 .text-reader-layout {
   display: grid;
-  grid-template-columns: 248px 1fr;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 12px;
   height: 100%;
+  padding: 12px 12px 54px;
+}
+
+.text-reader-layout.toc-hidden {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .toc-panel {
   min-height: 0;
-  border-right: 1px solid var(--line);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   background: var(--surface-soft);
+  box-shadow: var(--shadow-soft);
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
 }
@@ -1124,8 +1155,8 @@ input,
 
 .text-page {
   width: min(800px, calc(100% - 72px));
-  min-height: calc(100% - 56px);
-  margin: 28px auto;
+  min-height: 100%;
+  margin: 0 auto;
   padding: 52px 64px;
   border: 1px solid rgba(119, 141, 169, 0.18);
   border-radius: 14px;
@@ -1223,9 +1254,12 @@ input,
 
 .floating-page-indicator {
   position: absolute;
-  right: 22px;
-  bottom: 18px;
-  padding: 6px 10px;
+  right: 12px;
+  bottom: 10px;
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  padding: 0 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: #415268;

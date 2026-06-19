@@ -4,6 +4,7 @@ import { formatPercent } from "../../lib/format";
 
 interface TextFlowReaderProps {
   book: BookItem;
+  showToc: boolean;
   onProgress: (progress: Partial<ReadingProgress>) => void;
   onProgressLabel: (label: string) => void;
 }
@@ -12,7 +13,7 @@ const VIRTUAL_OVERSCAN_UNITS = 36;
 const TEXT_PAGE_MAX_WIDTH = 800;
 const TEXT_PAGE_HORIZONTAL_PADDING = 128;
 
-export function TextFlowReader({ book, onProgress, onProgressLabel }: TextFlowReaderProps) {
+export function TextFlowReader({ book, showToc, onProgress, onProgressLabel }: TextFlowReaderProps) {
   const [units, setUnits] = useState<TextUnit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -140,24 +141,26 @@ export function TextFlowReader({ book, onProgress, onProgressLabel }: TextFlowRe
   if (!units.length) return <div className="reader-loading">正在读取数据库内容...</div>;
 
   return (
-    <div className="text-reader-layout">
-      <aside className="toc-panel">
-        <div className="toc-header">
-          <strong>目录</strong>
-          <span>{units.length} 单元</span>
-        </div>
-        <div className="toc-list">
-          {headings.length === 0 ? (
-            <p>未识别到章节标题</p>
-          ) : (
-            headings.map((unit) => (
-              <button key={unit.id} onClick={() => jumpTo(unit.unitIndex)} title={unit.title || unit.text || ""}>
-                {unit.title || unit.text}
-              </button>
-            ))
-          )}
-        </div>
-      </aside>
+    <div className={`text-reader-layout${showToc ? "" : " toc-hidden"}`}>
+      {showToc && (
+        <aside className="toc-panel">
+          <div className="toc-header">
+            <strong>目录</strong>
+            <span>{units.length} 单元</span>
+          </div>
+          <div className="toc-list">
+            {headings.length === 0 ? (
+              <p>未识别到章节标题</p>
+            ) : (
+              headings.map((unit) => (
+                <button key={unit.id} onClick={() => jumpTo(unit.unitIndex)} title={unit.title || unit.text || ""}>
+                  {unit.title || unit.text}
+                </button>
+              ))
+            )}
+          </div>
+        </aside>
+      )}
       <article className="text-reader-scroll" ref={containerRef} onScroll={handleScroll}>
         <div
           className="text-page"

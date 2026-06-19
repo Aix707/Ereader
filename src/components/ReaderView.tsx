@@ -1,16 +1,17 @@
 import {
   ArrowLeft,
-  BookOpen,
+  ArrowLeftRight,
+  ArrowRightLeft,
+  BookText,
   Columns2,
-  FileText,
-  Image,
+  Images,
   Maximize2,
   Minus,
   Minimize2,
-  PanelLeftClose,
   PanelLeftOpen,
+  PanelLeftClose,
   Plus,
-  Rows3
+  RectangleHorizontal
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
@@ -27,14 +28,16 @@ interface ReaderViewProps {
 }
 
 export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
-  const [progressLabel, setProgressLabel] = useState(formatPercent(book.progress.percent || 0));
+  const [progressPercent, setProgressPercent] = useState(book.progress.percent || 0);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
+  const [showToc, setShowToc] = useState(true);
   const saveTimer = useRef<number | null>(null);
   const chromeTimer = useRef<number | null>(null);
 
   const saveProgress = useCallback(
     (progress: Partial<ReadingProgress>) => {
+      if (typeof progress.percent === "number") setProgressPercent(progress.percent);
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => {
         onUpdateBook(book.id, {
@@ -86,11 +89,17 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
     [book.id, onUpdateBook]
   );
 
+  const ignoreProgressLabel = useCallback(() => undefined, []);
+
   const handleToolbarDoubleClick = useCallback((event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
     if (target.closest("button, .segmented-control, .window-controls")) return;
     window.ereader.windowControls.toggleMaximize().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    setProgressPercent(book.progress.percent || 0);
+  }, [book.id, book.progress.percent]);
 
   useEffect(() => {
     return () => {
@@ -135,6 +144,7 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
   const isComic = book.contentType === "comic";
   const isReady = book.importStatus === "ready" || !book.importStatus;
   const usePageReader = book.contentType === "comic" || book.format === "pdf" || book.format === "image-folder";
+  const showTocToggle = !usePageReader;
 
   return (
     <main
@@ -152,12 +162,8 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
           <button className="toolbar-button" onClick={onBack} title="返回书架">
             <ArrowLeft size={18} />
           </button>
-          <div className="reader-title">
+          <div className="reader-title" title={`${book.title} · ${labelForFormat(book.format)} · ${labelForContentType(book.contentType)}`}>
             <h1>{book.title}</h1>
-            <span>
-              {labelForFormat(book.format)} · {labelForContentType(book.contentType)}
-              {!isComic && ` · ${progressLabel}`}
-            </span>
           </div>
         </div>
 
@@ -166,8 +172,8 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
             <SegmentedControl
               value={book.contentType}
               options={[
-                { value: "novel", label: "小说", icon: <FileText size={15} /> },
-                { value: "comic", label: "漫画", icon: <Image size={15} /> }
+                { value: "novel", label: "小说模式", icon: <BookText size={15} /> },
+                { value: "comic", label: "漫画模式", icon: <Images size={15} /> }
               ]}
               onChange={(value) => updateContentType(value as ContentType)}
             />
@@ -178,16 +184,16 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
               <SegmentedControl
                 value={book.preferences.pageSpread}
                 options={[
-                  { value: "single", label: "单页", icon: <PanelLeftClose size={15} /> },
-                  { value: "double", label: "双页", icon: <PanelLeftOpen size={15} /> }
+                  { value: "single", label: "单页", icon: <RectangleHorizontal size={15} /> },
+                  { value: "double", label: "双页", icon: <Columns2 size={15} /> }
                 ]}
                 onChange={(value) => updatePreference({ pageSpread: value as PageSpread })}
               />
               <SegmentedControl
                 value={book.preferences.readingDirection}
                 options={[
-                  { value: "ltr", label: "左到右", icon: <Rows3 size={15} /> },
-                  { value: "rtl", label: "右到左", icon: <Columns2 size={15} /> }
+                  { value: "ltr", label: "左到右", icon: <ArrowLeftRight size={15} /> },
+                  { value: "rtl", label: "右到左", icon: <ArrowRightLeft size={15} /> }
                 ]}
                 onChange={(value) => updatePreference({ readingDirection: value as ReadingDirection })}
               />
@@ -237,20 +243,32 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
           <PageFlowReader
             book={book}
             onProgress={saveProgress}
-            onProgressLabel={setProgressLabel}
+            onProgressLabel={ignoreProgressLabel}
           />
         ) : (
           <TextFlowReader
             book={book}
+            showToc={showToc}
             onProgress={saveProgress}
-            onProgressLabel={setProgressLabel}
+            onProgressLabel={ignoreProgressLabel}
           />
         )}
       </section>
 
       <footer className="reader-status">
-        <BookOpen size={15} />
-        <span>{book.path}</span>
+        <div className="reader-status-group">
+          {showTocToggle && (
+            <button
+              className="reader-status-button"
+              onClick={() => setShowToc((value) => !value)}
+              title={showToc ? "隐藏目录" : "显示目录"}
+              aria-label={showToc ? "隐藏目录" : "显示目录"}
+            >
+              {showToc ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
+            </button>
+          )}
+          <span>{formatPercent(progressPercent)}</span>
+        </div>
       </footer>
     </main>
   );
