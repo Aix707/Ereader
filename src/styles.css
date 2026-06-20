@@ -315,7 +315,6 @@ input,
 }
 
 .brand-block span,
-.progress-text,
 .toc-header span,
 .diagnostic-stat span,
 .diagnostic-panel p,
@@ -816,30 +815,49 @@ input,
 
 .book-card-summary {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: var(--gap-xs);
   height: var(--gallery-summary-h);
   min-height: 0;
-  padding: 5px var(--gap-sm) 6px;
+  padding: 5px 36px 6px;
 }
 
-.pill {
+.book-summary-island {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: min(122px, 100%);
+  max-width: 100%;
   height: var(--control-xs);
-  padding: 0 var(--gap-sm);
-  border: 1px solid rgba(47, 111, 216, 0.14);
+  gap: var(--gap-xs);
+  padding: 0 var(--gap-md);
+  overflow: hidden;
+  border: 1px solid var(--blue-line);
   border-radius: 999px;
-  color: #245da9;
+  color: var(--blue-text);
   font-size: var(--font-sm);
-  background: var(--accent-soft);
+  font-weight: 680;
+  white-space: nowrap;
+  background: var(--blue-glass);
+  box-shadow:
+    0 12px 30px rgba(80, 142, 220, 0.14),
+    inset 0 1px rgba(255, 255, 255, 0.92);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
 }
 
-.progress-text {
-  color: var(--muted);
-  font-size: var(--font-sm);
+.book-summary-island span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.book-summary-island i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(24, 90, 168, 0.36);
 }
 
 .status-pill {
@@ -938,6 +956,7 @@ input,
   -webkit-backdrop-filter: blur(18px) saturate(175%) brightness(1.04);
   opacity: 0;
   pointer-events: none;
+  user-select: none;
   transform: translateX(-6px) scale(0.98);
   transform-origin: left top;
   transition:
@@ -952,24 +971,9 @@ input,
   transform-origin: right top;
 }
 
-.book-hover-panel::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(-1 * var(--pad-sm));
-  width: var(--pad-sm);
-}
-
-.book-card.panel-left .book-hover-panel::before {
-  right: calc(-1 * var(--pad-sm));
-  left: auto;
-}
-
 .book-card:hover .book-hover-panel,
 .book-card:focus-within .book-hover-panel {
   opacity: 1;
-  pointer-events: auto;
   transform: translateX(0) scale(1);
 }
 
@@ -1005,8 +1009,8 @@ input,
 .book-detail-grid {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);
-  gap: 5px var(--gap-sm);
-  padding: var(--gap-sm);
+  gap: var(--gap-xs) var(--gap-sm);
+  padding: var(--gap-md);
   border: 1px solid rgba(255, 255, 255, 0.62);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.12);
@@ -1032,14 +1036,6 @@ input,
   font-weight: 700;
 }
 
-.book-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: var(--gap-xs);
-  max-width: 100%;
-}
-
 .icon-button,
 .toolbar-button {
   width: var(--control-lg);
@@ -1052,10 +1048,70 @@ input,
   -webkit-backdrop-filter: var(--glass-filter);
 }
 
-.icon-button.primary-icon {
+.card-floating-actions {
+  position: absolute;
+  z-index: 8;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--gallery-summary-h);
+  pointer-events: none;
+}
+
+.card-action-button {
+  position: absolute;
+  bottom: 5px;
+  display: grid;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: #43566d;
+  background: rgba(250, 253, 255, 0.66);
+  box-shadow: var(--shadow-control);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px) scale(0.94);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease,
+    color 150ms ease,
+    background 150ms ease,
+    border-color 150ms ease;
+}
+
+.card-action-button.left {
+  left: var(--gap-sm);
+}
+
+.card-action-button.right {
+  right: var(--gap-sm);
+}
+
+.book-card:hover .card-action-button,
+.book-card:focus-within .card-action-button {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.card-action-button:hover,
+.card-action-button:focus-visible {
   color: var(--blue-text);
   border-color: var(--blue-line);
   background: var(--blue-glass-strong);
+  outline: 0;
+}
+
+.card-action-button.right:hover,
+.card-action-button.right:focus-visible {
+  color: var(--danger);
+  border-color: rgba(180, 62, 74, 0.22);
+  background: var(--danger-soft);
 }
 
 .icon-text-button {

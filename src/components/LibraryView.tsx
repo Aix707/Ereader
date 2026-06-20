@@ -347,9 +347,13 @@ function BookCard({
           </div>
         </div>
         <div className="book-card-summary">
-          <span className="pill">{labelForContentType(book.contentType)}</span>
-          <span className={`status-pill ${importStatus}`}>{statusLabel(importStatus)}</span>
-          <span className="progress-text">{progress}</span>
+          <span className="book-summary-island">
+            <span>{labelForContentType(book.contentType)}</span>
+            <i aria-hidden="true" />
+            <span>{statusLabel(importStatus)}</span>
+            <i aria-hidden="true" />
+            <span>{progress}</span>
+          </span>
         </div>
         {importStatus !== "ready" && (
           <div className="card-import-status">
@@ -379,39 +383,38 @@ function BookCard({
           <strong>{progress}</strong>
           <span>阅读</span>
           <strong>{lastReadText}</strong>
+          <span>源文件</span>
+          <strong>{book.sourceExists === false ? "缺失" : "存在"}</strong>
+          <span>添加</span>
+          <strong>{formatRelativeDate(book.addedAt)}</strong>
         </div>
         {book.importError && <p className="card-error">{book.importError}</p>}
-        <div className="book-card-actions" aria-label={`${book.title} 操作`}>
-          {canOpen && (
-            <button className="icon-button primary-icon" onClick={onOpen} title="继续阅读">
-              <Play size={16} />
-            </button>
-          )}
-          {canToggleContent && (
-            <button
-              className="icon-button"
-              onClick={() =>
-                onUpdateBook({ contentType: book.contentType === "novel" ? "comic" : "novel" })
-              }
-              title={book.contentType === "novel" ? "切换为漫画模式" : "切换为小说模式"}
-            >
-              {book.contentType === "novel" ? <Images size={16} /> : <FileText size={16} />}
-            </button>
-          )}
-          {(importStatus === "queued" || importStatus === "processing") && (
-            <button className="icon-button" onClick={onCancelImport} title="取消导入">
-              <CircleStop size={16} />
-            </button>
-          )}
-          {(importStatus === "error" || importStatus === "stale" || importStatus === "cancelled") && (
-            <button className="icon-button" onClick={onRebuild} title="重建数据库内容">
-              <RefreshCw size={16} />
-            </button>
-          )}
-          <button className="icon-button" onClick={onRemove} title="从书库移除">
-            <Trash2 size={16} />
+      </div>
+
+      <div className="card-floating-actions" aria-label={`${book.title} 操作`}>
+        {(importStatus === "queued" || importStatus === "processing") ? (
+          <button className="card-action-button left" onClick={onCancelImport} title="取消导入" aria-label="取消导入">
+            <CircleStop size={16} />
           </button>
-        </div>
+        ) : (importStatus === "error" || importStatus === "stale" || importStatus === "cancelled") ? (
+          <button className="card-action-button left" onClick={onRebuild} title="重建数据库内容" aria-label="重建数据库内容">
+            <RefreshCw size={16} />
+          </button>
+        ) : canToggleContent ? (
+          <button
+            className="card-action-button left"
+            onClick={() =>
+              onUpdateBook({ contentType: book.contentType === "novel" ? "comic" : "novel" })
+            }
+            title={book.contentType === "novel" ? "切换为漫画模式" : "切换为小说模式"}
+            aria-label={book.contentType === "novel" ? "切换为漫画模式" : "切换为小说模式"}
+          >
+            {book.contentType === "novel" ? <Images size={16} /> : <FileText size={16} />}
+          </button>
+        ) : null}
+        <button className="card-action-button right" onClick={onRemove} title="从书库移除" aria-label="从书库移除">
+          <Trash2 size={16} />
+        </button>
       </div>
     </article>
   );
