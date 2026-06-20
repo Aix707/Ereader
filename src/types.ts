@@ -117,6 +117,59 @@ export interface DiagnosticsSummary {
   }>;
 }
 
+export interface StatsSummary {
+  generatedAt: string;
+  overview: {
+    totalBooks: number;
+    readBooks: number;
+    averageProgress: number;
+    completedBooks: number;
+    activeDays30: number;
+    currentStreakDays: number;
+  };
+  habits: {
+    activeDays30: number;
+    currentStreakDays: number;
+    recentOpenCount: number;
+    favoriteContentType?: ContentType | null;
+    favoriteFormat?: BookFormat | null;
+  };
+  progressBands: Array<{
+    key: "not-started" | "reading" | "near-done" | "completed";
+    label: string;
+    count: number;
+    ratio: number;
+  }>;
+  activityByDay: Array<{
+    day: string;
+    events: number;
+    opens: number;
+    progressEvents: number;
+  }>;
+  contentTypes: Array<{
+    key: ContentType;
+    count: number;
+    ratio: number;
+  }>;
+  formats: Array<{
+    key: BookFormat;
+    count: number;
+    ratio: number;
+  }>;
+  recentBooks: Array<{
+    id: string;
+    title: string;
+    format: BookFormat;
+    contentType: ContentType;
+    coverAssetId?: number | null;
+    coverKind?: "asset" | "generated";
+    coverExcerpt?: string | null;
+    progressPercent: number;
+    lastOpenedAt?: string | null;
+  }>;
+  advanced: DiagnosticsSummary;
+}
+
 export interface ImportStateChange {
   type: "queued" | "started" | "progress" | "finished" | "error" | "cancelled";
   bookId: string;

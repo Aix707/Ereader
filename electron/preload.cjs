@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("ereader", {
   rebuildBook: (id) => ipcRenderer.invoke("cache:rebuildBook", id),
   cancelImport: (id) => ipcRenderer.invoke("cache:cancelImport", id),
   getDiagnostics: () => ipcRenderer.invoke("diagnostics:summary"),
+  getStats: () => ipcRenderer.invoke("stats:summary"),
   onImportStateChanged: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("import:stateChanged", listener);

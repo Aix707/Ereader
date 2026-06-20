@@ -10,6 +10,9 @@ const DEFAULT_PREFS = {
   readingDirection: "ltr",
   fitMode: "contain"
 };
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PROGRESS_ACTIVITY_INTERVAL_MS = 5 * 60 * 1000;
+const PROGRESS_ACTIVITY_DELTA = 0.02;
 
 function nowIso() {
   return new Date().toISOString();
@@ -21,6 +24,33 @@ function sha256(value) {
 
 function stripHtml(value) {
   return String(value || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function clamp01(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(1, number));
+}
+
+function startOfLocalDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function dayKey(dateLike) {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function recentDayKeys(count) {
+  const today = startOfLocalDay(new Date());
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(today.getTime() - (count - 1 - index) * DAY_MS);
+    return dayKey(date);
+  });
 }
 
 function sourceStats(sourcePath, kind) {
@@ -197,6 +227,23 @@ function createRepository(userDataPath) {
       started_at TEXT,
       finished_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS reading_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      format TEXT NOT NULL,
+      progress_percent REAL NOT NULL DEFAULT 0,
+      progress_kind TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reading_activity_book_time
+      ON reading_activity(book_id, occurred_at);
+
+    CREATE INDEX IF NOT EXISTS idx_reading_activity_time
+      ON reading_activity(occurred_at);
   `);
 
   const statements = {
@@ -226,6 +273,18 @@ function createRepository(userDataPath) {
     ),
     insertDiagnostic: db.prepare(
       "INSERT INTO diagnostics (book_id, level, message, details_json, created_at) VALUES (?, ?, ?, ?, ?)"
+    ),
+    insertReadingActivity: db.prepare(
+      `INSERT INTO reading_activity (
+        book_id, event_type, occurred_at, content_type, format, progress_percent, progress_kind
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ),
+    lastProgressActivity: db.prepare(
+      `SELECT occurred_at AS occurredAt, progress_percent AS progressPercent
+       FROM reading_activity
+       WHERE book_id = ? AND event_type = 'progress'
+       ORDER BY id DESC
+       LIMIT 1`
     ),
     updateBookStatus: db.prepare(
       `UPDATE books
@@ -410,6 +469,32 @@ function createRepository(userDataPath) {
     );
   }
 
+  function shouldRecordProgressActivity(bookId, percent) {
+    const last = statements.lastProgressActivity.get(bookId);
+    if (!last) return true;
+    const lastTime = new Date(last.occurredAt).getTime();
+    if (Number.isNaN(lastTime)) return true;
+    const elapsed = Date.now() - lastTime;
+    const delta = Math.abs(clamp01(last.progressPercent) - percent);
+    return elapsed >= PROGRESS_ACTIVITY_INTERVAL_MS || delta >= PROGRESS_ACTIVITY_DELTA;
+  }
+
+  function recordReadingActivity(book, eventType, progress) {
+    if (!book) return;
+    const next = normalizeProgress(progress || book.progress || {});
+    const percent = clamp01(next.percent);
+    if (eventType === "progress" && !shouldRecordProgressActivity(book.id, percent)) return;
+    statements.insertReadingActivity.run(
+      book.id,
+      eventType,
+      nowIso(),
+      book.contentType || book.content_type || "novel",
+      book.format || book.source_format || "txt",
+      percent,
+      next.kind || "none"
+    );
+  }
+
   function updateBook(bookId, patch) {
     const current = getBook(bookId);
     if (!current) throw new Error("Book not found");
@@ -436,7 +521,12 @@ function createRepository(userDataPath) {
         ...patch.preferences
       });
     }
-    if (patch.progress) upsertProgress(bookId, { ...current.progress, ...patch.progress });
+    if (patch.lastOpenedAt && !patch.progress) recordReadingActivity(current, "open", current.progress);
+    if (patch.progress) {
+      const nextProgress = normalizeProgress({ ...current.progress, ...patch.progress });
+      upsertProgress(bookId, nextProgress);
+      recordReadingActivity(current, "progress", nextProgress);
+    }
     return getBook(bookId);
   }
 
@@ -557,6 +647,145 @@ function createRepository(userDataPath) {
     return db.prepare("SELECT id, mime, width, height, data FROM assets WHERE id = ?").get(assetId);
   }
 
+  function buildProgressBands(books) {
+    const total = books.length || 1;
+    const bands = [
+      { key: "not-started", label: "未开始", count: 0 },
+      { key: "reading", label: "阅读中", count: 0 },
+      { key: "near-done", label: "接近完成", count: 0 },
+      { key: "completed", label: "已完成", count: 0 }
+    ];
+    for (const book of books) {
+      const percent = clamp01(book.progress?.percent);
+      if (percent >= 0.98) bands[3].count += 1;
+      else if (percent >= 0.8) bands[2].count += 1;
+      else if (percent > 0) bands[1].count += 1;
+      else bands[0].count += 1;
+    }
+    return bands.map((band) => ({ ...band, ratio: band.count / total }));
+  }
+
+  function countBookGroups(books, field, preferredOrder) {
+    const counts = new Map(preferredOrder.map((key) => [key, 0]));
+    for (const book of books) {
+      const key = book[field] || "unknown";
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const total = books.length || 1;
+    return Array.from(counts.entries())
+      .filter(([, count]) => count > 0)
+      .map(([key, count]) => ({ key, count, ratio: count / total }));
+  }
+
+  function buildActivitySummary(books) {
+    const now = new Date();
+    const since30 = startOfLocalDay(new Date(now.getTime() - 29 * DAY_MS)).getTime();
+    const keys30 = recentDayKeys(30);
+    const daily = new Map(
+      keys30.map((key) => [key, { day: key, events: 0, opens: 0, progressEvents: 0 }])
+    );
+    const openKeys = new Set();
+    const rows = db
+      .prepare(
+        `SELECT book_id AS bookId, event_type AS eventType, occurred_at AS occurredAt
+         FROM reading_activity
+         WHERE occurred_at >= ?
+         ORDER BY occurred_at ASC`
+      )
+      .all(new Date(since30).toISOString());
+
+    function addDailyEvent(bookId, eventType, occurredAt, legacy = false) {
+      const timestamp = new Date(occurredAt).getTime();
+      if (Number.isNaN(timestamp) || timestamp < since30) return;
+      const key = dayKey(occurredAt);
+      const bucket = key ? daily.get(key) : null;
+      if (!bucket) return;
+      if (eventType === "open") {
+        const openKey = `${bookId}:${key}`;
+        if (openKeys.has(openKey)) return;
+        openKeys.add(openKey);
+      }
+      bucket.events += 1;
+      if (eventType === "open" || legacy) bucket.opens += 1;
+      if (eventType === "progress") bucket.progressEvents += 1;
+    }
+
+    for (const row of rows) addDailyEvent(row.bookId, row.eventType, row.occurredAt);
+    for (const book of books) {
+      if (book.lastOpenedAt) addDailyEvent(book.id, "open", book.lastOpenedAt, true);
+    }
+
+    const values = Array.from(daily.values());
+    const activeDays30 = values.filter((item) => item.events > 0).length;
+    let currentStreakDays = 0;
+    for (let index = values.length - 1; index >= 0; index -= 1) {
+      if (values[index].events === 0) break;
+      currentStreakDays += 1;
+    }
+    const activityByDay = values.slice(-14);
+    const recentOpenCount = values.slice(-7).reduce((sum, item) => sum + item.opens, 0);
+    return { activeDays30, currentStreakDays, activityByDay, recentOpenCount };
+  }
+
+  function topGroupLabel(groups) {
+    const top = [...groups].sort((a, b) => b.count - a.count)[0];
+    return top?.key || null;
+  }
+
+  function statsSummary() {
+    const library = listBooks();
+    const books = library.books;
+    const totalBooks = books.length;
+    const readBooks = books.filter((book) => clamp01(book.progress?.percent) > 0 || book.lastOpenedAt).length;
+    const completedBooks = books.filter((book) => clamp01(book.progress?.percent) >= 0.98).length;
+    const averageProgress = totalBooks
+      ? books.reduce((sum, book) => sum + clamp01(book.progress?.percent), 0) / totalBooks
+      : 0;
+    const progressBands = buildProgressBands(books);
+    const contentTypes = countBookGroups(books, "contentType", ["novel", "comic"]);
+    const formats = countBookGroups(books, "format", ["txt", "epub", "pdf", "image-folder"]);
+    const activity = buildActivitySummary(books);
+    const recentBooks = books
+      .filter((book) => book.lastOpenedAt || clamp01(book.progress?.percent) > 0)
+      .slice(0, 6)
+      .map((book) => ({
+        id: book.id,
+        title: book.title,
+        format: book.format,
+        contentType: book.contentType,
+        coverAssetId: book.coverAssetId,
+        coverKind: book.coverKind,
+        coverExcerpt: book.coverExcerpt,
+        progressPercent: clamp01(book.progress?.percent),
+        lastOpenedAt: book.lastOpenedAt
+      }));
+
+    return {
+      generatedAt: nowIso(),
+      overview: {
+        totalBooks,
+        readBooks,
+        averageProgress,
+        completedBooks,
+        activeDays30: activity.activeDays30,
+        currentStreakDays: activity.currentStreakDays
+      },
+      habits: {
+        activeDays30: activity.activeDays30,
+        currentStreakDays: activity.currentStreakDays,
+        recentOpenCount: activity.recentOpenCount,
+        favoriteContentType: topGroupLabel(contentTypes),
+        favoriteFormat: topGroupLabel(formats)
+      },
+      progressBands,
+      activityByDay: activity.activityByDay,
+      contentTypes,
+      formats,
+      recentBooks,
+      advanced: diagnosticsSummary()
+    };
+  }
+
   function diagnosticsSummary() {
     const books = db
       .prepare(
@@ -655,6 +884,7 @@ function createRepository(userDataPath) {
     getTextUnits,
     getPageUnits,
     getAsset,
+    statsSummary,
     diagnosticsSummary,
     migrateFromJson,
     booksNeedingImport,

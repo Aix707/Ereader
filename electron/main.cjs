@@ -276,6 +276,7 @@ ipcMain.handle("cache:cancelImport", (_event, id) => {
 });
 
 ipcMain.handle("diagnostics:summary", () => repo.diagnosticsSummary());
+ipcMain.handle("stats:summary", () => repo.statsSummary());
 
 ipcMain.handle("window:minimize", () => {
   mainWindow?.minimize();

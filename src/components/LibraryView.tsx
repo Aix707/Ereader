@@ -1,8 +1,8 @@
 import {
   BookOpen,
+  ChartNoAxesCombined,
   CircleStop,
   Clock3,
-  Database,
   FileArchive,
   FileText,
   FolderOpen,
@@ -35,7 +35,7 @@ interface LibraryViewProps {
   onUpdateBook: (id: string, patch: BookPatch) => Promise<BookItem>;
   onRebuildBook: (id: string) => Promise<void>;
   onCancelImport: (id: string) => Promise<void>;
-  onOpenDiagnostics: () => void;
+  onOpenStats: () => void;
 }
 
 export function LibraryView({
@@ -50,7 +50,7 @@ export function LibraryView({
   onUpdateBook,
   onRebuildBook,
   onCancelImport,
-  onOpenDiagnostics
+  onOpenStats
 }: LibraryViewProps) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
@@ -166,9 +166,9 @@ export function LibraryView({
           <FilterButton icon={<Images size={17} />} active={filter === "comic"} onClick={() => setFilter("comic")}>
             漫画 <span>{comics}</span>
           </FilterButton>
-          <button className="nav-item" onClick={onOpenDiagnostics}>
-            <Database size={17} />
-            诊断 <span>SQLite</span>
+          <button className="nav-item" onClick={onOpenStats}>
+            <ChartNoAxesCombined size={17} />
+            统计 <span>阅读</span>
           </button>
         </nav>
 

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DiagnosticsView } from "./components/DiagnosticsView";
 import { LibraryView } from "./components/LibraryView";
 import { ReaderView } from "./components/ReaderView";
+import { StatsView } from "./components/StatsView";
 import type { BookItem, LibraryStore } from "./types";
 
 export function App() {
   const [store, setStore] = useState<LibraryStore>({ version: 1, books: [] });
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
-  const [screen, setScreen] = useState<"library" | "diagnostics">("library");
+  const [screen, setScreen] = useState<"library" | "stats">("library");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const refreshTimer = useRef<number | null>(null);
@@ -113,9 +113,9 @@ export function App() {
     );
   }
 
-  if (screen === "diagnostics") {
+  if (screen === "stats") {
     return (
-      <DiagnosticsView
+      <StatsView
         onBack={() => setScreen("library")}
         onRebuild={rebuildBook}
       />
@@ -135,7 +135,7 @@ export function App() {
       onUpdateBook={updateBook}
       onRebuildBook={rebuildBook}
       onCancelImport={cancelImport}
-      onOpenDiagnostics={() => setScreen("diagnostics")}
+      onOpenStats={() => setScreen("stats")}
     />
   );
 }
