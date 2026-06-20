@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { createRepository } = require("./database.cjs");
+const { detectContentType } = require("./content-detector.cjs");
 const { imageFilesInFolder } = require("./importer.cjs");
 const { createWorkerImporter } = require("./import-worker-client.cjs");
 
@@ -149,21 +150,24 @@ function titleFromPath(absPath, format) {
   return format === "image-folder" ? base : base.replace(path.extname(base), "");
 }
 
-function makeBook(absPath, kind, format) {
+async function makeBook(absPath, kind, format) {
+  const id = makeId(absPath);
+  const existing = repo.getRawBook(id);
+  const contentType = existing?.content_type || await detectContentType(absPath, kind, format);
   return repo.upsertBook({
-    id: makeId(absPath),
+    id,
     title: titleFromPath(absPath, format),
     path: absPath,
     kind,
     format,
-    contentType: format === "image-folder" ? "comic" : "novel"
+    contentType
   });
 }
 
-function scanFolderForBooks(folderPath) {
+async function scanFolderForBooks(folderPath) {
   const books = [];
   if (imageFilesInFolder(folderPath).length > 0) {
-    books.push(makeBook(folderPath, "folder", "image-folder"));
+    books.push(await makeBook(folderPath, "folder", "image-folder"));
   }
 
   const entries = fs.readdirSync(folderPath, { withFileTypes: true });
@@ -171,15 +175,15 @@ function scanFolderForBooks(folderPath) {
     const absPath = path.join(folderPath, entry.name);
     if (entry.isFile()) {
       const format = inferFileFormat(absPath);
-      if (format) books.push(makeBook(absPath, "file", format));
+      if (format) books.push(await makeBook(absPath, "file", format));
     } else if (entry.isDirectory() && imageFilesInFolder(absPath).length > 0) {
-      books.push(makeBook(absPath, "folder", "image-folder"));
+      books.push(await makeBook(absPath, "folder", "image-folder"));
     }
   }
   return books;
 }
 
-function importPaths(rawPaths) {
+async function importPaths(rawPaths) {
   const imported = [];
   const seen = new Set();
   for (const rawPath of Array.isArray(rawPaths) ? rawPaths : []) {
@@ -191,12 +195,12 @@ function importPaths(rawPaths) {
 
     const stat = fs.statSync(absPath);
     if (stat.isDirectory()) {
-      imported.push(...scanFolderForBooks(absPath));
+      imported.push(...(await scanFolderForBooks(absPath)));
       continue;
     }
     if (!stat.isFile()) continue;
     const format = inferFileFormat(absPath);
-    if (format) imported.push(makeBook(absPath, "file", format));
+    if (format) imported.push(await makeBook(absPath, "file", format));
   }
   for (const book of imported) importer.enqueue(book.id);
   return repo.listBooks();
@@ -222,10 +226,11 @@ ipcMain.handle("dialog:importFiles", async () => {
     ]
   });
   if (result.canceled) return repo.listBooks();
-  const imported = result.filePaths
-    .map((filePath) => ({ filePath, format: inferFileFormat(filePath) }))
-    .filter((item) => item.format)
-    .map((item) => makeBook(item.filePath, "file", item.format));
+  const imported = [];
+  for (const filePath of result.filePaths) {
+    const format = inferFileFormat(filePath);
+    if (format) imported.push(await makeBook(filePath, "file", format));
+  }
   for (const book of imported) importer.enqueue(book.id);
   return repo.listBooks();
 });
@@ -236,12 +241,12 @@ ipcMain.handle("dialog:importFolder", async () => {
     properties: ["openDirectory"]
   });
   if (result.canceled || result.filePaths.length === 0) return repo.listBooks();
-  const imported = scanFolderForBooks(result.filePaths[0]);
+  const imported = await scanFolderForBooks(result.filePaths[0]);
   for (const book of imported) importer.enqueue(book.id);
   return repo.listBooks();
 });
 
-ipcMain.handle("dialog:importDroppedPaths", (_event, paths) => importPaths(paths));
+ipcMain.handle("dialog:importDroppedPaths", async (_event, paths) => importPaths(paths));
 
 ipcMain.handle("library:updateBook", (_event, id, patch) => {
   const updated = repo.updateBook(id, patch || {});

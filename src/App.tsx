@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LibraryView } from "./components/LibraryView";
 import { ReaderView } from "./components/ReaderView";
 import { StatsView } from "./components/StatsView";
@@ -6,7 +6,7 @@ import type { BookItem, LibraryStore } from "./types";
 
 export function App() {
   const [store, setStore] = useState<LibraryStore>({ version: 1, books: [] });
-  const [activeBookId, setActiveBookId] = useState<string | null>(null);
+  const [activeBook, setActiveBook] = useState<BookItem | null>(null);
   const [screen, setScreen] = useState<"library" | "stats">("library");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,11 +47,6 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [refreshLibrary, store.books]);
 
-  const activeBook = useMemo(
-    () => store.books.find((book) => book.id === activeBookId) || null,
-    [activeBookId, store.books]
-  );
-
   async function importFiles() {
     setError(null);
     setStore(await window.ereader.importFiles());
@@ -68,18 +63,19 @@ export function App() {
     setStore(await window.ereader.importDroppedPaths(paths));
   }
 
-  async function updateBook(id: string, patch: Parameters<typeof window.ereader.updateBook>[1]) {
+  const updateBook = useCallback(async (id: string, patch: Parameters<typeof window.ereader.updateBook>[1]) => {
     const updated = await window.ereader.updateBook(id, patch);
     setStore((current) => ({
       ...current,
       books: current.books.map((book) => (book.id === id ? updated : book))
     }));
+    setActiveBook((current) => (current?.id === id ? updated : current));
     return updated;
-  }
+  }, []);
 
   async function removeBook(id: string) {
     setStore(await window.ereader.removeBook(id));
-    if (activeBookId === id) setActiveBookId(null);
+    setActiveBook((current) => (current?.id === id ? null : current));
   }
 
   async function rebuildBook(id: string) {
@@ -98,16 +94,20 @@ export function App() {
     }));
   }
 
-  function openBook(book: BookItem) {
-    setActiveBookId(book.id);
-    updateBook(book.id, { lastOpenedAt: new Date().toISOString() }).catch(() => undefined);
+  async function openBook(book: BookItem) {
+    try {
+      const updated = await updateBook(book.id, { lastOpenedAt: new Date().toISOString() });
+      setActiveBook(updated);
+    } catch {
+      setActiveBook(book);
+    }
   }
 
   if (activeBook) {
     return (
       <ReaderView
         book={activeBook}
-        onBack={() => setActiveBookId(null)}
+        onBack={() => setActiveBook(null)}
         onUpdateBook={updateBook}
       />
     );

@@ -10,6 +10,10 @@ const DEFAULT_PREFS = {
   readingDirection: "ltr",
   fitMode: "contain"
 };
+const DEFAULT_COMIC_PREFS = {
+  ...DEFAULT_PREFS,
+  pageSpread: "double"
+};
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PROGRESS_ACTIVITY_INTERVAL_MS = 5 * 60 * 1000;
 const PROGRESS_ACTIVITY_DELTA = 0.02;
@@ -104,18 +108,22 @@ function normalizeProgress(progress = {}) {
   };
 }
 
-function normalizePrefs(preferences = {}) {
+function defaultPrefsForContentType(contentType) {
+  return contentType === "comic" ? DEFAULT_COMIC_PREFS : DEFAULT_PREFS;
+}
+
+function normalizePrefs(preferences = {}, defaults = DEFAULT_PREFS) {
   return {
-    fontSize: preferences.fontSize ?? preferences.font_size ?? DEFAULT_PREFS.fontSize,
-    lineHeight: preferences.lineHeight ?? preferences.line_height ?? DEFAULT_PREFS.lineHeight,
-    pageSpread: preferences.pageSpread ?? preferences.page_spread ?? DEFAULT_PREFS.pageSpread,
-    readingDirection: preferences.readingDirection ?? preferences.reading_direction ?? DEFAULT_PREFS.readingDirection,
-    fitMode: preferences.fitMode ?? preferences.fit_mode ?? DEFAULT_PREFS.fitMode
+    fontSize: preferences.fontSize ?? preferences.font_size ?? defaults.fontSize,
+    lineHeight: preferences.lineHeight ?? preferences.line_height ?? defaults.lineHeight,
+    pageSpread: preferences.pageSpread ?? preferences.page_spread ?? defaults.pageSpread,
+    readingDirection: preferences.readingDirection ?? preferences.reading_direction ?? defaults.readingDirection,
+    fitMode: preferences.fitMode ?? preferences.fit_mode ?? defaults.fitMode
   };
 }
 
-function publicPrefs(preferences = {}) {
-  const prefs = normalizePrefs(preferences);
+function publicPrefs(preferences = {}, contentType = "novel") {
+  const prefs = normalizePrefs(preferences, defaultPrefsForContentType(contentType));
   return {
     fontSize: prefs.fontSize,
     lineHeight: prefs.lineHeight,
@@ -300,8 +308,23 @@ function createRepository(userDataPath) {
     )
   };
 
+  runMigrations();
+
+  function runMigrations() {
+    const userVersion = Number(db.pragma("user_version", { simple: true }) || 0);
+    if (userVersion < 1) {
+      db.prepare(
+        `UPDATE preferences
+         SET page_spread = 'double'
+         WHERE page_spread = 'single'
+           AND book_id IN (SELECT id FROM books WHERE content_type = 'comic')`
+      ).run();
+      db.pragma("user_version = 1");
+    }
+  }
+
   function rowToBook(row) {
-    const prefs = publicPrefs(statements.prefsById.get(row.id) || {});
+    const prefs = publicPrefs(statements.prefsById.get(row.id) || {}, row.content_type);
     const progress = normalizeProgress(statements.progressById.get(row.id) || {});
     const cover = statements.coverById.get(row.id);
     const coverExcerpt = row.source_format === "txt" && !cover ? textCoverExcerpt(row.id) : null;
@@ -381,6 +404,7 @@ function createRepository(userDataPath) {
     const stats = sourceStats(source.path, source.kind);
     const existing = statements.bookById.get(source.id);
     const timestamp = nowIso();
+    const contentType = existing?.content_type || source.contentType || defaultContentType(source.format);
     db.prepare(
       `INSERT INTO books (
         id, title, source_path, source_kind, source_format, content_type, added_at, updated_at,
@@ -410,7 +434,7 @@ function createRepository(userDataPath) {
       source_path: source.path,
       source_kind: source.kind,
       source_format: source.format,
-      content_type: existing?.content_type || source.contentType || defaultContentType(source.format),
+      content_type: contentType,
       added_at: existing?.added_at || timestamp,
       updated_at: timestamp,
       last_opened_at: existing?.last_opened_at || null,
@@ -423,13 +447,16 @@ function createRepository(userDataPath) {
       unit_count: existing?.unit_count || 0,
       asset_count: existing?.asset_count || 0
     });
-    upsertPreferences(source.id, normalizePrefs(existing ? statements.prefsById.get(source.id) : source.preferences));
+    upsertPreferences(
+      source.id,
+      normalizePrefs(existing ? statements.prefsById.get(source.id) : source.preferences, defaultPrefsForContentType(contentType))
+    );
     upsertProgress(source.id, normalizeProgress(existing ? statements.progressById.get(source.id) : source.progress));
     return getBook(source.id);
   }
 
-  function upsertPreferences(bookId, preferences) {
-    const prefs = normalizePrefs(preferences);
+  function upsertPreferences(bookId, preferences, defaults = DEFAULT_PREFS) {
+    const prefs = normalizePrefs(preferences, defaults);
     db.prepare(
       `INSERT INTO preferences (book_id, font_size, line_height, page_spread, reading_direction, fit_mode)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -514,12 +541,16 @@ function createRepository(userDataPath) {
          WHERE id = ?`
       ).run(patch.title || null, patch.lastOpenedAt || null, nowIso(), bookId);
     }
-    if (patch.preferences) {
+    if (patch.preferences || patch.contentType === "comic") {
+      const nextContentType = patch.contentType || current.contentType;
+      const contentDefaults = defaultPrefsForContentType(nextContentType);
+      const comicDefaults = patch.contentType === "comic" && !patch.preferences?.pageSpread ? { pageSpread: "double" } : {};
       upsertPreferences(bookId, {
         ...(statements.prefsById.get(bookId) || {}),
         ...current.preferences,
+        ...comicDefaults,
         ...patch.preferences
-      });
+      }, contentDefaults);
     }
     if (patch.lastOpenedAt && !patch.progress) recordReadingActivity(current, "open", current.progress);
     if (patch.progress) {

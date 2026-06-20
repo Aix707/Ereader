@@ -31,20 +31,42 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
   const [chromeVisible, setChromeVisible] = useState(true);
   const [showToc, setShowToc] = useState(true);
   const saveTimer = useRef<number | null>(null);
+  const pendingProgress = useRef<Partial<ReadingProgress> | null>(null);
   const chromeTimer = useRef<number | null>(null);
+
+  const persistProgress = useCallback(
+    (progress: Partial<ReadingProgress>) => {
+      onUpdateBook(book.id, {
+        progress,
+        lastOpenedAt: new Date().toISOString()
+      }).catch(() => undefined);
+    },
+    [book.id, onUpdateBook]
+  );
+
+  const flushPendingProgress = useCallback(() => {
+    if (saveTimer.current) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const progress = pendingProgress.current;
+    pendingProgress.current = null;
+    if (progress) persistProgress(progress);
+  }, [persistProgress]);
 
   const saveProgress = useCallback(
     (progress: Partial<ReadingProgress>) => {
       if (typeof progress.percent === "number") setProgressPercent(progress.percent);
+      pendingProgress.current = progress;
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => {
-        onUpdateBook(book.id, {
-          progress,
-          lastOpenedAt: new Date().toISOString()
-        }).catch(() => undefined);
+        const nextProgress = pendingProgress.current;
+        pendingProgress.current = null;
+        saveTimer.current = null;
+        if (nextProgress) persistProgress(nextProgress);
       }, 350);
     },
-    [book.id, onUpdateBook]
+    [persistProgress]
   );
 
   const clearChromeHideTimer = useCallback(() => {
@@ -94,10 +116,10 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
 
   useEffect(() => {
     return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      flushPendingProgress();
       clearChromeHideTimer();
     };
-  }, [clearChromeHideTimer]);
+  }, [clearChromeHideTimer, flushPendingProgress]);
 
   useEffect(() => {
     let cleanup: () => void = () => undefined;

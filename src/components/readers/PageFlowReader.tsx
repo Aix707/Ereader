@@ -28,7 +28,7 @@ interface DecodeCacheEntry {
 
 export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowReaderProps) {
   const [pages, setPages] = useState<PageUnit[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(Math.max(0, (book.progress.page || 1) - 1));
+  const [currentIndex, setCurrentIndex] = useState(() => pageIndexFromProgress(book.progress));
   const [isJumping, setIsJumping] = useState(false);
   const [jumpValue, setJumpValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -38,13 +38,15 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
   const lastWheelDirectionRef = useRef(0);
   const lastWheelAtRef = useRef(0);
   const decodeCacheRef = useRef<Map<number, DecodeCacheEntry>>(new Map());
+  const didRestoreProgressRef = useRef(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     setError(null);
     setPages([]);
-    setCurrentIndex(Math.max(0, (book.progress.page || 1) - 1));
+    setCurrentIndex(pageIndexFromProgress(book.progress));
     setIsJumping(false);
+    didRestoreProgressRef.current = false;
     decodeCacheRef.current.clear();
     wheelDeltaRef.current = 0;
     lastWheelDirectionRef.current = 0;
@@ -55,8 +57,13 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
   }, [book.id]);
 
   const spreadSize = book.preferences.pageSpread === "double" ? 2 : 1;
+  const lastSpreadStart = useMemo(
+    () => lastSpreadStartIndex(pages.length, spreadSize),
+    [pages.length, spreadSize]
+  );
   const visiblePages = useMemo(() => {
-    const spread = pages.slice(currentIndex, currentIndex + spreadSize);
+    const indexes = pageIndexesForSpread(currentIndex, spreadSize, pages.length);
+    const spread = indexes.map((index) => pages[index]).filter((page): page is PageUnit => Boolean(page));
     return book.preferences.readingDirection === "rtl" ? [...spread].reverse() : spread;
   }, [book.preferences.readingDirection, currentIndex, pages, spreadSize]);
 
@@ -93,11 +100,11 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
   );
 
   const goNext = useCallback(() => {
-    goToIndex(currentIndex + spreadSize);
-  }, [currentIndex, goToIndex, spreadSize]);
+    goToIndex(nextSpreadStart(currentIndex, pages.length, spreadSize));
+  }, [currentIndex, goToIndex, pages.length, spreadSize]);
 
   const goPrevious = useCallback(() => {
-    goToIndex(currentIndex - spreadSize);
+    goToIndex(previousSpreadStart(currentIndex, spreadSize));
   }, [currentIndex, goToIndex, spreadSize]);
 
   const openPageJump = useCallback(() => {
@@ -162,6 +169,7 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
   );
 
   useEffect(() => {
+    if (!pages.length) return;
     setCurrentIndex((index) => {
       const nextIndex = clampAndAlignIndex(index, pages.length, spreadSize);
       preloadAroundIndex(nextIndex);
@@ -209,6 +217,10 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
     const page = Math.min(currentIndex + 1, pages.length);
     const percent = pages.length <= 1 ? 1 : currentIndex / (pages.length - 1);
     onProgressLabel(`${page}/${pages.length}`);
+    if (!didRestoreProgressRef.current) {
+      didRestoreProgressRef.current = true;
+      return;
+    }
     onProgress({ kind: "page", page, totalPages: pages.length, percent });
   }, [currentIndex, pages.length, onProgress, onProgressLabel]);
 
@@ -264,7 +276,7 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
           />
         ))}
       </div>
-      <button className="page-turn right" onClick={goNext} disabled={currentIndex >= pages.length - 1}>
+      <button className="page-turn right" onClick={goNext} disabled={currentIndex >= lastSpreadStart}>
         <ChevronRight size={22} />
       </button>
       <div className="floating-page-indicator">
@@ -329,9 +341,19 @@ function getContainedSize(sourceWidth: number, sourceHeight: number, maxWidth: n
   };
 }
 
+function pageIndexFromProgress(progress: ReadingProgress) {
+  if (typeof progress.page === "number" && progress.page > 0) return Math.max(0, progress.page - 1);
+  const percent = Number(progress.percent || 0);
+  const totalPages = Number(progress.totalPages || 0);
+  if (Number.isFinite(percent) && percent > 0 && totalPages > 1) {
+    return Math.max(0, Math.round(Math.min(1, percent) * (totalPages - 1)));
+  }
+  return 0;
+}
+
 function alignToSpreadStart(index: number, spreadSize: number) {
-  if (spreadSize <= 1) return index;
-  return Math.max(0, Math.floor(index / spreadSize) * spreadSize);
+  if (spreadSize <= 1 || index <= 0) return Math.max(0, index);
+  return Math.max(1, 1 + Math.floor((index - 1) / spreadSize) * spreadSize);
 }
 
 function clampAndAlignIndex(index: number, totalPages: number, spreadSize: number) {
@@ -340,15 +362,55 @@ function clampAndAlignIndex(index: number, totalPages: number, spreadSize: numbe
   return Math.max(0, Math.min(totalPages - 1, alignToSpreadStart(clamped, spreadSize)));
 }
 
+function pageIndexesForSpread(startIndex: number, spreadSize: number, totalPages: number) {
+  if (totalPages <= 0) return [];
+  const aligned = clampAndAlignIndex(startIndex, totalPages, spreadSize);
+  if (spreadSize <= 1 || aligned === 0) return [aligned];
+  const indexes: number[] = [];
+  for (let index = aligned; index < aligned + spreadSize && index < totalPages; index += 1) {
+    indexes.push(index);
+  }
+  return indexes;
+}
+
+function spreadStarts(totalPages: number, spreadSize: number) {
+  if (totalPages <= 0) return [];
+  if (spreadSize <= 1) return Array.from({ length: totalPages }, (_, index) => index);
+  const starts = [0];
+  for (let index = 1; index < totalPages; index += spreadSize) {
+    starts.push(index);
+  }
+  return starts;
+}
+
+function lastSpreadStartIndex(totalPages: number, spreadSize: number) {
+  const starts = spreadStarts(totalPages, spreadSize);
+  return starts[starts.length - 1] || 0;
+}
+
+function nextSpreadStart(currentIndex: number, totalPages: number, spreadSize: number) {
+  const starts = spreadStarts(totalPages, spreadSize);
+  const current = clampAndAlignIndex(currentIndex, totalPages, spreadSize);
+  const position = Math.max(0, starts.indexOf(current));
+  return starts[Math.min(starts.length - 1, position + 1)] || current;
+}
+
+function previousSpreadStart(currentIndex: number, spreadSize: number) {
+  if (spreadSize <= 1) return currentIndex - 1;
+  if (currentIndex <= 1) return 0;
+  return currentIndex - spreadSize;
+}
+
 function pageIndexesForPreload(centerIndex: number, spreadSize: number, totalPages: number, radius: number) {
   if (totalPages <= 0) return [];
   const indexes = new Set<number>();
-  const spreadStart = alignToSpreadStart(centerIndex, spreadSize);
-  for (let spreadOffset = -radius; spreadOffset <= radius; spreadOffset += 1) {
-    const start = spreadStart + spreadOffset * spreadSize;
-    for (let index = start; index < start + spreadSize; index += 1) {
-      if (index >= 0 && index < totalPages) indexes.add(index);
-    }
+  const starts = spreadStarts(totalPages, spreadSize);
+  const spreadStart = clampAndAlignIndex(centerIndex, totalPages, spreadSize);
+  const currentPosition = Math.max(0, starts.indexOf(spreadStart));
+  const startPosition = Math.max(0, currentPosition - radius);
+  const endPosition = Math.min(starts.length - 1, currentPosition + radius);
+  for (let position = startPosition; position <= endPosition; position += 1) {
+    for (const index of pageIndexesForSpread(starts[position], spreadSize, totalPages)) indexes.add(index);
   }
   return [...indexes].sort((left, right) => left - right);
 }
