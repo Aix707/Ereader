@@ -85,7 +85,7 @@ npm run package:win
 GitHub Release 通过 tag 触发：
 
 ```powershell
-git tag v0.1.0
+git tag v1.0.0
 git push origin main --tags
 ```
 

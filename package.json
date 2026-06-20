@@ -1,6 +1,6 @@
 {
   "name": "ereader",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "author": "Aix707",
   "description": "A local Windows reader for novels, manga, PDF, EPUB, TXT, and image folders.",
