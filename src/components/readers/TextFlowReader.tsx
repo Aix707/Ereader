@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { BookItem, NovelReadingSettings, ReadingProgress, TextUnit } from "../../types";
 import { formatPercent } from "../../lib/format";
@@ -19,15 +19,18 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
   const [units, setUnits] = useState<TextUnit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
-  const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 });
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const restoredRef = useRef(false);
+  const ignoreScrollProgressRef = useRef(false);
 
   useEffect(() => {
     restoredRef.current = false;
     setUnits([]);
     setError(null);
     setScrollTop(0);
+    setViewportSize({ width: 0, height: 0 });
+    ignoreScrollProgressRef.current = false;
     window.ereader
       .getTextUnits(book.id)
       .then(setUnits)
@@ -97,27 +100,30 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || restoredRef.current || units.length === 0) return;
+    if (!container || restoredRef.current || units.length === 0 || viewportSize.width <= 0 || viewportSize.height <= 0) return;
     requestAnimationFrame(() => {
-      const ratio = book.progress.scrollRatio || 0;
-      setViewportSize({
-        width: Math.max(1, container.clientWidth),
-        height: Math.max(1, container.clientHeight)
-      });
+      const ratio = clamp(Number(book.progress.scrollRatio ?? book.progress.percent ?? 0));
       const nextScrollTop = ratio * Math.max(0, virtualHeight - container.clientHeight);
+      ignoreScrollProgressRef.current = true;
+      restoredRef.current = true;
       container.scrollTop = nextScrollTop;
       setScrollTop(nextScrollTop);
-      restoredRef.current = true;
+      requestAnimationFrame(() => {
+        ignoreScrollProgressRef.current = false;
+      });
     });
-  }, [book.progress.scrollRatio, units.length, virtualHeight]);
+  }, [book.progress.percent, book.progress.scrollRatio, units.length, viewportSize.height, viewportSize.width, virtualHeight]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const measure = () =>
-      setViewportSize({
-        width: Math.max(1, container.clientWidth),
-        height: Math.max(1, container.clientHeight)
+      setViewportSize((current) => {
+        const next = {
+          width: Math.max(1, container.clientWidth),
+          height: Math.max(1, container.clientHeight)
+        };
+        return current.width === next.width && current.height === next.height ? current : next;
       });
     measure();
     const observer = new ResizeObserver(measure);
@@ -136,6 +142,7 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
     const scrollable = Math.max(1, virtualHeight - container.clientHeight);
     const ratio = Math.max(0, Math.min(1, container.scrollTop / scrollable));
     onProgressLabel(formatPercent(ratio));
+    if (!restoredRef.current || ignoreScrollProgressRef.current) return;
     onProgress({ kind: "scroll", scrollRatio: ratio, percent: ratio });
   }
 
