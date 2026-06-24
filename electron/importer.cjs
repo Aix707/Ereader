@@ -373,21 +373,7 @@ async function processMobiComic(repo, book, renditionId, notify, assertActive) {
   const mobi = readMobiFile(book.source_path);
   const root = parse(mobi.html || "");
   const body = root.querySelector("body") || root;
-  const imageNodes = body.querySelectorAll("img,image");
-  const orderedImages = [];
-  const used = new Set();
-
-  for (const node of imageNodes) {
-    const image = mobiImageForNode(mobi.images, node);
-    if (!image || used.has(image.key)) continue;
-    used.add(image.key);
-    orderedImages.push(image);
-  }
-  if (orderedImages.length === 0) {
-    for (const [key, image] of mobi.images.entries()) {
-      orderedImages.push({ ...image, key, recindex: key });
-    }
-  }
+  const orderedImages = orderedMobiImages(mobi, body.querySelectorAll("img,image"));
   if (orderedImages.length === 0) throw new Error("No image pages found in MOBI file");
 
   for (let index = 0; index < orderedImages.length; index += 1) {
@@ -423,12 +409,14 @@ async function processMobiNovel(repo, book, renditionId, notify, assertActive) {
 
   let unitIndex = 0;
   const pending = [];
+  const usedImages = new Set();
   for (const node of nodes) {
     assertActive();
     const tagName = String(node.tagName || "").toLowerCase();
     if (tagName === "img" || tagName === "image") {
       const image = mobiImageForNode(mobi.images, node);
-      if (!image) continue;
+      if (!image || usedImages.has(image.key)) continue;
+      usedImages.add(image.key);
       const asset = await normalizeImage(image.data, image.sourceRef);
       pending.push({
         asset,
@@ -490,21 +478,48 @@ async function processMobiNovel(repo, book, renditionId, notify, assertActive) {
   }
 }
 
+function orderedMobiImages(mobi, imageNodes) {
+  const orderedImages = [];
+  const used = new Set();
+
+  for (const node of imageNodes) {
+    const image = mobiImageForNode(mobi.images, node);
+    if (!image || used.has(image.key)) continue;
+    used.add(image.key);
+    orderedImages.push(image);
+  }
+
+  if (orderedImages.length === 0) {
+    for (const [key, image] of mobi.images.entries()) {
+      if (used.has(key)) continue;
+      used.add(key);
+      orderedImages.push({ ...image, key, recindex: key });
+    }
+  }
+  return orderedImages;
+}
+
 function mobiImageForNode(images, node) {
   const candidates = [];
   const recindex = getAttr(node, ["recindex", "data-recindex"]);
-  if (recindex) candidates.push(Number.parseInt(recindex, 10));
+  if (recindex) addMobiImageCandidates(candidates, Number.parseInt(recindex, 10));
   const src = getAttr(node, ["src", "href", "xlink:href"]) || "";
   const embed = String(src).match(/kindle:embed:([0-9a-f]+)/i);
   if (embed) {
-    candidates.push(Number.parseInt(embed[1], 16), Number.parseInt(embed[1], 10));
+    addMobiImageCandidates(candidates, Number.parseInt(embed[1], 16));
+    addMobiImageCandidates(candidates, Number.parseInt(embed[1], 10));
   }
   for (const candidate of candidates) {
     if (!Number.isFinite(candidate)) continue;
     if (images.has(candidate)) return { ...images.get(candidate), key: candidate, recindex: candidate };
-    if (images.has(candidate - 1)) return { ...images.get(candidate - 1), key: candidate - 1, recindex: candidate };
   }
   return null;
+}
+
+function addMobiImageCandidates(candidates, value) {
+  if (!Number.isFinite(value)) return;
+  if (value > 0) candidates.push(value - 1);
+  candidates.push(value);
 }
 
 async function processEpub(repo, book, renditionId, notify, assertActive) {

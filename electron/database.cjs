@@ -7,7 +7,7 @@ const DEFAULT_PREFS = {
   fontSize: 18,
   lineHeight: 1.8,
   pageSpread: "single",
-  readingDirection: "ltr",
+  readingDirection: "rtl",
   fitMode: "contain"
 };
 const DEFAULT_COMIC_PREFS = {
@@ -649,7 +649,12 @@ function createRepository(userDataPath) {
     if (patch.preferences || patch.contentType === "comic") {
       const nextContentType = patch.contentType || current.contentType;
       const contentDefaults = defaultPrefsForContentType(nextContentType);
-      const comicDefaults = patch.contentType === "comic" && !patch.preferences?.pageSpread ? { pageSpread: "double" } : {};
+      const comicDefaults = patch.contentType === "comic"
+        ? {
+            ...(!patch.preferences?.pageSpread ? { pageSpread: "double" } : {}),
+            ...(!patch.preferences?.readingDirection ? { readingDirection: "rtl" } : {})
+          }
+        : {};
       upsertPreferences(bookId, {
         ...(statements.prefsById.get(bookId) || {}),
         ...current.preferences,
