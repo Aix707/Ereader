@@ -19,7 +19,8 @@ const DEFAULT_APP_SETTINGS = {
     fontSize: 18,
     fontFamily: "serif",
     lineHeight: 1.8,
-    paragraphSpacing: 1.1
+    paragraphSpacing: 1.1,
+    pageWidth: 800
   }
 };
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -61,7 +62,8 @@ function normalizeNovelReadingSettings(value = {}) {
     fontSize: Math.round(clampNumber(value.fontSize, 16, 28, defaults.fontSize)),
     fontFamily: safeFontFamily(value.fontFamily || defaults.fontFamily),
     lineHeight: Number(clampNumber(value.lineHeight, 1.45, 2.2, defaults.lineHeight).toFixed(2)),
-    paragraphSpacing: Number(clampNumber(value.paragraphSpacing, 0.4, 2.2, defaults.paragraphSpacing).toFixed(2))
+    paragraphSpacing: Number(clampNumber(value.paragraphSpacing, 0.4, 2.2, defaults.paragraphSpacing).toFixed(2)),
+    pageWidth: Math.round(clampNumber(value.pageWidth, 620, 980, defaults.pageWidth))
   };
 }
 

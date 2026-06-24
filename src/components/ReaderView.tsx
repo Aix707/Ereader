@@ -461,6 +461,15 @@ function TypographyMenu({
             suffix="em"
             onChange={(paragraphSpacing) => onChange({ paragraphSpacing })}
           />
+          <TypographyRange
+            label="页面宽度"
+            value={settings.pageWidth}
+            min={620}
+            max={980}
+            step={20}
+            suffix="px"
+            onChange={(pageWidth) => onChange({ pageWidth })}
+          />
         </div>
       )}
     </div>

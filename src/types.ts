@@ -8,6 +8,7 @@ export interface NovelReadingSettings {
   fontFamily: string;
   lineHeight: number;
   paragraphSpacing: number;
+  pageWidth: number;
 }
 
 export interface AppSettings {
@@ -23,7 +24,8 @@ export const DEFAULT_NOVEL_READING_SETTINGS: NovelReadingSettings = {
   fontSize: 18,
   fontFamily: "serif",
   lineHeight: 1.8,
-  paragraphSpacing: 1.1
+  paragraphSpacing: 1.1,
+  pageWidth: 800
 };
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {

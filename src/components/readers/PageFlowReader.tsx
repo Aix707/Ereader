@@ -17,7 +17,7 @@ const DECODE_CACHE_MAX_ASSETS = 18;
 const DECODE_CACHE_MAX_BYTES = 128 * 1024 * 1024;
 const WHEEL_PAGE_THRESHOLD = 48;
 const WHEEL_COOLDOWN_MS = 180;
-const THUMBNAIL_ITEM_HEIGHT = 116;
+const THUMBNAIL_ITEM_HEIGHT = 112;
 const THUMBNAIL_OVERSCAN_ITEMS = 8;
 
 interface DecodeCacheEntry {
@@ -405,10 +405,12 @@ function ComicThumbnailPanel({
               onClick={() => onSelect(index)}
               title={`第 ${index + 1} 页`}
             >
-              <span className="comic-thumbnail-frame">
-                {shouldLoad ? <ThumbnailImage page={page} /> : <i />}
+              <span className="comic-thumbnail-card">
+                <span className="comic-thumbnail-frame">
+                  {shouldLoad ? <ThumbnailImage page={page} /> : <i />}
+                </span>
+                <strong>{index + 1}</strong>
               </span>
-              <strong>{index + 1}</strong>
             </button>
           );
         })}

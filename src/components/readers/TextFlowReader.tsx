@@ -12,7 +12,6 @@ interface TextFlowReaderProps {
 }
 
 const VIRTUAL_OVERSCAN_UNITS = 36;
-const TEXT_PAGE_MAX_WIDTH = 800;
 const TEXT_PAGE_HORIZONTAL_PADDING = 128;
 const TEXT_PAGE_BOTTOM_SAFETY = 180;
 
@@ -44,9 +43,9 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
     () =>
       Math.max(
         280,
-        Math.min(TEXT_PAGE_MAX_WIDTH, Math.max(320, viewportSize.width - 72)) - TEXT_PAGE_HORIZONTAL_PADDING
+        Math.min(novelSettings.pageWidth, Math.max(320, viewportSize.width - 72)) - TEXT_PAGE_HORIZONTAL_PADDING
       ),
-    [viewportSize.width]
+    [novelSettings.pageWidth, viewportSize.width]
   );
 
   const estimatedHeights = useMemo(
@@ -222,6 +221,7 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
           className="text-page"
           style={{
             "--novel-paragraph-spacing": `${novelSettings.paragraphSpacing}em`,
+            "--novel-page-width": `${novelSettings.pageWidth}px`,
             fontFamily: cssFontFamily(novelSettings.fontFamily),
             fontSize: novelSettings.fontSize,
             lineHeight: novelSettings.lineHeight

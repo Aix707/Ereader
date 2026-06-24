@@ -1515,6 +1515,15 @@ select,
   padding: var(--gap-md);
 }
 
+.page-reader-layout {
+  grid-template-columns: 128px minmax(0, 1fr);
+}
+
+.reader-shell.fullscreen:not(.chrome-hidden) .text-reader-layout:not(.toc-hidden),
+.reader-shell.fullscreen:not(.chrome-hidden) .page-reader-layout:not(.thumbnails-hidden) {
+  padding-top: calc(var(--topbar-height) + var(--gap-md));
+}
+
 .text-reader-layout.toc-hidden,
 .page-reader-layout.thumbnails-hidden {
   grid-template-columns: minmax(0, 1fr);
@@ -1596,15 +1605,13 @@ select,
 
 .comic-thumbnail-list button {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  align-items: center;
-  gap: var(--gap-sm);
-  min-height: 108px;
-  padding: var(--gap-xs);
+  justify-items: center;
+  min-height: 112px;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: #415268;
-  text-align: left;
+  text-align: center;
   background: transparent;
   cursor: pointer;
 }
@@ -1612,6 +1619,20 @@ select,
 .comic-thumbnail-list button:hover,
 .comic-thumbnail-list button.active {
   color: var(--blue-text);
+}
+
+.comic-thumbnail-card {
+  display: grid;
+  width: 100%;
+  justify-items: center;
+  gap: var(--gap-xs);
+  padding: var(--gap-xs);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+
+.comic-thumbnail-list button:hover .comic-thumbnail-card,
+.comic-thumbnail-list button.active .comic-thumbnail-card {
   border-color: var(--blue-line);
   background: var(--blue-glass);
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.88);
@@ -1619,8 +1640,8 @@ select,
 
 .comic-thumbnail-frame {
   display: grid;
-  width: 74px;
-  height: 94px;
+  width: 64px;
+  height: 82px;
   overflow: hidden;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.82);
@@ -1647,6 +1668,7 @@ select,
 
 .comic-thumbnail-list strong {
   font-size: var(--font-sm);
+  line-height: 1;
 }
 
 .text-reader-scroll {
@@ -1656,7 +1678,7 @@ select,
 }
 
 .text-page {
-  width: min(800px, calc(100% - 72px));
+  width: min(var(--novel-page-width, 800px), calc(100% - 72px));
   min-height: 100%;
   margin: 0 auto;
   padding: 52px 64px 84px;
@@ -2467,8 +2489,11 @@ select,
     padding: 0;
   }
 
-  .text-reader-layout,
-  .page-reader-layout {
+  .text-reader-layout {
     grid-template-columns: 210px 1fr;
+  }
+
+  .page-reader-layout {
+    grid-template-columns: 118px 1fr;
   }
 }
