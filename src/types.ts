@@ -11,8 +11,15 @@ export interface NovelReadingSettings {
   pageWidth: number;
 }
 
+export interface AppearanceSettings {
+  backgroundOpacity: number;
+  backgroundLayerMode: "default" | "image" | "none";
+  backgroundImageVersion?: number;
+}
+
 export interface AppSettings {
   novelReading: NovelReadingSettings;
+  appearance: AppearanceSettings;
 }
 
 export interface SystemFontItem {
@@ -29,7 +36,12 @@ export const DEFAULT_NOVEL_READING_SETTINGS: NovelReadingSettings = {
 };
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
-  novelReading: DEFAULT_NOVEL_READING_SETTINGS
+  novelReading: DEFAULT_NOVEL_READING_SETTINGS,
+  appearance: {
+    backgroundOpacity: 0.18,
+    backgroundLayerMode: "default",
+    backgroundImageVersion: 0
+  }
 };
 
 export interface ReaderPreferences {

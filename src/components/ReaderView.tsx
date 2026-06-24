@@ -16,6 +16,7 @@ import type { MouseEvent } from "react";
 import { PageFlowReader } from "./readers/PageFlowReader";
 import { TextFlowReader } from "./readers/TextFlowReader";
 import { WindowControls } from "./WindowControls";
+import { globalBackgroundStyle } from "../lib/appearance";
 import type {
   AppSettings,
   BookItem,
@@ -28,6 +29,7 @@ import type {
   ReadingProgress,
   SystemFontItem
 } from "../types";
+import { DEFAULT_NOVEL_READING_SETTINGS } from "../types";
 import { formatPercent, labelForContentType, labelForFormat } from "../lib/format";
 
 interface ReaderViewProps {
@@ -47,6 +49,7 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
   const saveTimer = useRef<number | null>(null);
   const pendingProgress = useRef<Partial<ReadingProgress> | null>(null);
   const chromeTimer = useRef<number | null>(null);
+  const shellStyle = useMemo(() => globalBackgroundStyle(appSettings.appearance), [appSettings.appearance]);
 
   const persistProgress = useCallback(
     (progress: Partial<ReadingProgress>) => {
@@ -175,6 +178,7 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
   return (
     <main
       className={`reader-shell${isFullScreen ? " fullscreen" : ""}${isFullScreen && !chromeVisible ? " chrome-hidden" : ""}`}
+      style={shellStyle}
       onMouseMove={revealChrome}
       onFocusCapture={revealChrome}
     >
@@ -470,6 +474,17 @@ function TypographyMenu({
             suffix="px"
             onChange={(pageWidth) => onChange({ pageWidth })}
           />
+          <button
+            className="typography-reset"
+            type="button"
+            onClick={() => {
+              setFontWasReset(false);
+              setQuery("");
+              onChange(DEFAULT_NOVEL_READING_SETTINGS);
+            }}
+          >
+            恢复默认
+          </button>
         </div>
       )}
     </div>

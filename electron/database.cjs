@@ -21,6 +21,11 @@ const DEFAULT_APP_SETTINGS = {
     lineHeight: 1.8,
     paragraphSpacing: 1.1,
     pageWidth: 800
+  },
+  appearance: {
+    backgroundOpacity: 0.18,
+    backgroundLayerMode: "default",
+    backgroundImageVersion: 0
   }
 };
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -68,11 +73,29 @@ function normalizeNovelReadingSettings(value = {}) {
 }
 
 function normalizeAppSettings(value = {}) {
+  const layerMode = ["default", "image", "none"].includes(value.appearance?.backgroundLayerMode)
+    ? value.appearance.backgroundLayerMode
+    : DEFAULT_APP_SETTINGS.appearance.backgroundLayerMode;
   return {
     novelReading: normalizeNovelReadingSettings({
       ...DEFAULT_APP_SETTINGS.novelReading,
       ...(value.novelReading || {})
-    })
+    }),
+    appearance: {
+      backgroundOpacity: Number(
+        clampNumber(
+          value.appearance?.backgroundOpacity,
+          0,
+          1,
+          DEFAULT_APP_SETTINGS.appearance.backgroundOpacity
+        ).toFixed(2)
+      ),
+      backgroundLayerMode: layerMode,
+      backgroundImageVersion: Math.max(
+        0,
+        Math.floor(clampNumber(value.appearance?.backgroundImageVersion, 0, Number.MAX_SAFE_INTEGER, 0))
+      )
+    }
   };
 }
 
@@ -465,12 +488,17 @@ function createRepository(userDataPath) {
   }
 
   function updateAppSettings(patch = {}) {
+    const current = getAppSettings();
     const next = normalizeAppSettings({
-      ...getAppSettings(),
+      ...current,
       ...patch,
       novelReading: {
-        ...getAppSettings().novelReading,
+        ...current.novelReading,
         ...(patch.novelReading || {})
+      },
+      appearance: {
+        ...current.appearance,
+        ...(patch.appearance || {})
       }
     });
     statements.upsertSetting.run("app", JSON.stringify(next), nowIso());

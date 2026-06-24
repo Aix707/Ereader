@@ -13,18 +13,21 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
-import type { StatsSummary } from "../types";
+import type { AppSettings, StatsSummary } from "../types";
 import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat } from "../lib/format";
+import { globalBackgroundStyle } from "../lib/appearance";
 import { WindowControls } from "./WindowControls";
 
 interface StatsViewProps {
   onBack: () => void;
   onRebuild: (bookId: string) => Promise<void>;
+  appSettings: AppSettings;
 }
 
-export function StatsView({ onBack, onRebuild }: StatsViewProps) {
+export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
   const [summary, setSummary] = useState<StatsSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const shellStyle = useMemo(() => globalBackgroundStyle(appSettings.appearance), [appSettings.appearance]);
 
   async function refresh() {
     setError(null);
@@ -53,7 +56,7 @@ export function StatsView({ onBack, onRebuild }: StatsViewProps) {
   );
 
   return (
-    <main className="stats-shell">
+    <main className="stats-shell" style={shellStyle}>
       <header className="app-titlebar stats-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
         <div className="topbar-title-island stats-title-island">
           <button className="topbar-island-button" onClick={onBack} title="返回书架" aria-label="返回书架">

@@ -12,13 +12,15 @@ import {
   Play,
   RefreshCw,
   Search,
+  Settings,
   Trash2,
   X
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, MouseEvent } from "react";
-import type { BookItem, BookPatch, LibraryStore } from "../types";
+import type { AppSettings, BookItem, BookPatch, LibraryStore } from "../types";
 import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat } from "../lib/format";
+import { globalBackgroundStyle } from "../lib/appearance";
 import { WindowControls } from "./WindowControls";
 
 type FilterKey = "all" | "recent" | "novel" | "comic";
@@ -36,6 +38,11 @@ interface LibraryViewProps {
   onRebuildBook: (id: string) => Promise<void>;
   onCancelImport: (id: string) => Promise<void>;
   onOpenStats: () => void;
+  appSettings: AppSettings;
+  onUpdateAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+  onChooseHomeBackgroundImage: () => Promise<AppSettings>;
+  onResetHomeBackground: () => Promise<AppSettings>;
+  onRemoveHomeBackground: () => Promise<AppSettings>;
 }
 
 export function LibraryView({
@@ -50,7 +57,12 @@ export function LibraryView({
   onUpdateBook,
   onRebuildBook,
   onCancelImport,
-  onOpenStats
+  onOpenStats,
+  appSettings,
+  onUpdateAppSettings,
+  onChooseHomeBackgroundImage,
+  onResetHomeBackground,
+  onRemoveHomeBackground
 }: LibraryViewProps) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
@@ -88,6 +100,7 @@ export function LibraryView({
         .sort((a, b) => new Date(b.lastOpenedAt || 0).getTime() - new Date(a.lastOpenedAt || 0).getTime())[0] || null,
     [store.books]
   );
+  const shellStyle = useMemo(() => globalBackgroundStyle(appSettings.appearance), [appSettings.appearance]);
 
   function handleTitlebarDoubleClick(event: MouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement;
@@ -129,6 +142,7 @@ export function LibraryView({
   return (
     <main
       className={`app-shell${isDragActive ? " drag-active" : ""}`}
+      style={shellStyle}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -139,7 +153,18 @@ export function LibraryView({
           <BookOpen size={15} />
           <span>Ereader</span>
         </div>
-        <WindowControls />
+        <div className="titlebar-actions">
+          <HomeSettingsMenu
+            backgroundOpacity={appSettings.appearance.backgroundOpacity}
+            onChange={(backgroundOpacity) =>
+              onUpdateAppSettings({ appearance: { ...appSettings.appearance, backgroundOpacity } }).catch(() => undefined)
+            }
+            onChooseImage={onChooseHomeBackgroundImage}
+            onReset={onResetHomeBackground}
+            onRemove={onRemoveHomeBackground}
+          />
+          <WindowControls />
+        </div>
       </header>
 
       <aside className="library-sidebar">
@@ -295,6 +320,84 @@ function FilterButton({
       {icon}
       {children}
     </button>
+  );
+}
+
+function HomeSettingsMenu({
+  backgroundOpacity,
+  onChange,
+  onChooseImage,
+  onReset,
+  onRemove
+}: {
+  backgroundOpacity: number;
+  onChange: (backgroundOpacity: number) => void;
+  onChooseImage: () => Promise<AppSettings>;
+  onReset: () => Promise<AppSettings>;
+  onRemove: () => Promise<AppSettings>;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="home-settings-menu" ref={menuRef}>
+      <button
+        className={open ? "toolbar-button active" : "toolbar-button"}
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        title="外观设置"
+        aria-label="外观设置"
+      >
+        <Settings size={16} />
+      </button>
+      {open && (
+        <div className="home-settings-popover">
+          <header>
+            <strong>外观设置</strong>
+            <span>{Math.round(backgroundOpacity * 100)}%</span>
+          </header>
+          <label className="home-setting-range">
+            <span>白蓝渐变透明度</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(backgroundOpacity * 100)}
+              onChange={(event) => onChange(Number(event.target.value) / 100)}
+            />
+          </label>
+          <div className="home-background-actions" aria-label="底层背景">
+            <button type="button" onClick={() => onChooseImage().catch(() => undefined)}>
+              更换
+            </button>
+            <button type="button" onClick={() => onReset().catch(() => undefined)}>
+              默认
+            </button>
+            <button type="button" onClick={() => onRemove().catch(() => undefined)}>
+              删除
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

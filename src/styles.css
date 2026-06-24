@@ -3,7 +3,7 @@
     Inter, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont,
     sans-serif;
   color: #1f2937;
-  background: #eef4fb;
+  background: transparent;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -83,7 +83,7 @@ body {
   min-width: 960px;
   min-height: 640px;
   overflow: hidden;
-  background: var(--bg);
+  background: transparent;
   font-size: var(--font-md);
   line-height: var(--line-ui);
 }
@@ -127,14 +127,15 @@ select,
 }
 
 .app-shell,
-.reader-shell {
+.reader-shell,
+.stats-shell {
   width: 100vw;
   height: 100vh;
   color: var(--text);
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.62), rgba(223, 236, 250, 0.82)),
-    linear-gradient(35deg, rgba(210, 228, 248, 0.72), rgba(248, 251, 255, 0.72)),
-    var(--bg);
+    var(--app-background-tint, linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(232, 243, 255, 0.18))),
+    var(--app-background-layer, linear-gradient(#fff, #fff)),
+    var(--app-background-fill, transparent);
 }
 
 .app-shell {
@@ -177,6 +178,85 @@ select,
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
   -webkit-app-region: no-drag;
+}
+
+.titlebar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  -webkit-app-region: no-drag;
+}
+
+.home-settings-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.home-settings-popover {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  width: 244px;
+  gap: var(--gap-md);
+  padding: var(--pad-md);
+  border: 1px solid var(--blue-line);
+  border-radius: var(--radius-lg);
+  color: #243449;
+  background: rgba(229, 244, 255, 0.34);
+  box-shadow: var(--shadow);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+}
+
+.home-settings-popover header,
+.home-setting-range {
+  display: grid;
+  gap: var(--gap-xs);
+}
+
+.home-settings-popover header {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.home-settings-popover header span {
+  color: var(--blue-text);
+  font-weight: 700;
+}
+
+.home-setting-range span {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.home-setting-range input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.home-background-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-xs);
+}
+
+.home-background-actions button {
+  min-height: var(--control-lg);
+  padding: 0 var(--gap-xs);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: #36506f;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: var(--shadow-control);
+  cursor: pointer;
+}
+
+.home-background-actions button:hover {
+  color: var(--blue-text);
+  border-color: var(--blue-line);
+  background: var(--blue-glass);
 }
 
 .topbar-title-island {
@@ -1434,6 +1514,22 @@ select,
   accent-color: var(--accent);
 }
 
+.typography-reset {
+  min-height: var(--control-lg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: #36506f;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: var(--shadow-control);
+  cursor: pointer;
+}
+
+.typography-reset:hover {
+  color: var(--blue-text);
+  border-color: var(--blue-line);
+  background: var(--blue-glass);
+}
+
 .reader-stage {
   min-height: 0;
   overflow: hidden;
@@ -1963,14 +2059,8 @@ select,
 }
 
 .stats-shell {
-  width: 100vw;
-  height: 100vh;
   overflow: auto;
   padding: 0 30px 40px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.62), rgba(226, 237, 249, 0.84)),
-    linear-gradient(35deg, rgba(210, 228, 248, 0.72), rgba(248, 251, 255, 0.72)),
-    var(--bg);
 }
 
 .stats-titlebar {

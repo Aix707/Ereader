@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
+const sharp = require("sharp");
 const { createRepository } = require("./database.cjs");
 const { detectContentType } = require("./content-detector.cjs");
 const { imageFilesInFolder } = require("./importer.cjs");
@@ -23,11 +24,22 @@ const FONT_REGISTRY_KEYS = [
   "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
 ];
 const FALLBACK_FONTS = ["serif", "system-ui", "SimSun", "Microsoft YaHei", "KaiTi", "SimHei"];
+const HOME_BACKGROUND_MAX_EDGE = 2400;
+const HOME_BACKGROUND_FILE = "home-background.webp";
 let fontCache = null;
 
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "ereader-asset",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true
+    }
+  },
+  {
+    scheme: "ereader-background",
     privileges: {
       standard: true,
       secure: true,
@@ -44,7 +56,8 @@ function createWindow() {
     minWidth: 980,
     minHeight: 660,
     frame: false,
-    backgroundColor: "#eef4fb",
+    transparent: true,
+    backgroundColor: "#00000000",
     icon: APP_ICON,
     title: "Ereader",
     webPreferences: {
@@ -153,6 +166,88 @@ function normalizeFontFamilyName(value) {
   return String(value || "").replace(/[\u0000-\u001f;"{}]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
+function homeBackgroundDir() {
+  return path.join(app.getPath("userData"), "background");
+}
+
+function homeBackgroundPath() {
+  return path.join(homeBackgroundDir(), HOME_BACKGROUND_FILE);
+}
+
+function homeBackgroundVersion(settings = repo.getAppSettings()) {
+  return Number(settings.appearance?.backgroundImageVersion || 0);
+}
+
+function appSettingsWithValidBackground() {
+  const settings = repo.getAppSettings();
+  if (settings.appearance.backgroundLayerMode !== "image") return settings;
+  if (fs.existsSync(homeBackgroundPath())) return settings;
+  return repo.updateAppSettings({
+    appearance: {
+      ...settings.appearance,
+      backgroundLayerMode: "default"
+    }
+  });
+}
+
+async function chooseHomeBackgroundImage() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "选择背景图片",
+    properties: ["openFile"],
+    filters: [
+      { name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "avif", "bmp", "gif", "tif", "tiff"] }
+    ]
+  });
+  if (result.canceled || result.filePaths.length === 0) return appSettingsWithValidBackground();
+
+  fs.mkdirSync(homeBackgroundDir(), { recursive: true });
+  const buffer = await sharp(result.filePaths[0], { animated: false })
+    .rotate()
+    .resize({
+      width: HOME_BACKGROUND_MAX_EDGE,
+      height: HOME_BACKGROUND_MAX_EDGE,
+      fit: "inside",
+      withoutEnlargement: true
+    })
+    .webp({ quality: 88, effort: 4 })
+    .toBuffer();
+  fs.writeFileSync(homeBackgroundPath(), buffer);
+
+  const current = repo.getAppSettings();
+  return repo.updateAppSettings({
+    appearance: {
+      ...current.appearance,
+      backgroundLayerMode: "image",
+      backgroundImageVersion: homeBackgroundVersion(current) + 1
+    }
+  });
+}
+
+function resetHomeBackground() {
+  const current = repo.getAppSettings();
+  return repo.updateAppSettings({
+    appearance: {
+      ...current.appearance,
+      backgroundLayerMode: "default"
+    }
+  });
+}
+
+function removeHomeBackground() {
+  const current = repo.getAppSettings();
+  try {
+    if (fs.existsSync(homeBackgroundPath())) fs.unlinkSync(homeBackgroundPath());
+  } catch {
+    // The mode change still makes the background invisible even if cleanup fails.
+  }
+  return repo.updateAppSettings({
+    appearance: {
+      ...current.appearance,
+      backgroundLayerMode: "none"
+    }
+  });
+}
+
 function registerAssetProtocol() {
   protocol.handle("ereader-asset", async (request) => {
     try {
@@ -187,6 +282,27 @@ function registerAssetProtocol() {
   });
 }
 
+function registerBackgroundProtocol() {
+  protocol.handle("ereader-background", async () => {
+    try {
+      const filePath = homeBackgroundPath();
+      if (!fs.existsSync(filePath)) return new Response("Background not found", { status: 404 });
+      const data = fs.readFileSync(filePath);
+      const etag = `"home-background-${data.length}-${Math.floor(fs.statSync(filePath).mtimeMs)}"`;
+      return new Response(data, {
+        headers: {
+          "Content-Type": "image/webp",
+          "Cache-Control": "public, max-age=31536000, immutable",
+          ETag: etag,
+          "Content-Length": String(data.length)
+        }
+      });
+    } catch (error) {
+      return new Response(String(error?.message || error), { status: 500 });
+    }
+  });
+}
+
 app.whenReady().then(() => {
   app.setAppUserModelId("local.ereader");
   repo = createRepository(app.getPath("userData"));
@@ -198,6 +314,7 @@ app.whenReady().then(() => {
     }
   });
   registerAssetProtocol();
+  registerBackgroundProtocol();
   createWindow();
   importer.enqueueMany(repo.booksNeedingImport());
   app.on("activate", () => {
@@ -362,8 +479,11 @@ ipcMain.handle("cache:cancelImport", (_event, id) => {
 
 ipcMain.handle("diagnostics:summary", () => repo.diagnosticsSummary());
 ipcMain.handle("stats:summary", () => repo.statsSummary());
-ipcMain.handle("settings:get", () => repo.getAppSettings());
+ipcMain.handle("settings:get", () => appSettingsWithValidBackground());
 ipcMain.handle("settings:update", (_event, patch) => repo.updateAppSettings(patch || {}));
+ipcMain.handle("appearance:chooseHomeBackgroundImage", () => chooseHomeBackgroundImage());
+ipcMain.handle("appearance:resetHomeBackground", () => resetHomeBackground());
+ipcMain.handle("appearance:removeHomeBackground", () => removeHomeBackground());
 ipcMain.handle("system:listFonts", () => listSystemFonts());
 
 ipcMain.handle("window:minimize", () => {

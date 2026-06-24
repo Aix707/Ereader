@@ -82,6 +82,24 @@ export function App() {
     return updated;
   }, []);
 
+  const chooseHomeBackgroundImage = useCallback(async () => {
+    const updated = await window.ereader.chooseHomeBackgroundImage();
+    setAppSettings(updated);
+    return updated;
+  }, []);
+
+  const resetHomeBackground = useCallback(async () => {
+    const updated = await window.ereader.resetHomeBackground();
+    setAppSettings(updated);
+    return updated;
+  }, []);
+
+  const removeHomeBackground = useCallback(async () => {
+    const updated = await window.ereader.removeHomeBackground();
+    setAppSettings(updated);
+    return updated;
+  }, []);
+
   async function removeBook(id: string) {
     setStore(await window.ereader.removeBook(id));
     setActiveBook((current) => (current?.id === id ? null : current));
@@ -129,6 +147,7 @@ export function App() {
       <StatsView
         onBack={() => setScreen("library")}
         onRebuild={rebuildBook}
+        appSettings={appSettings}
       />
     );
   }
@@ -147,6 +166,11 @@ export function App() {
       onRebuildBook={rebuildBook}
       onCancelImport={cancelImport}
       onOpenStats={() => setScreen("stats")}
+      appSettings={appSettings}
+      onUpdateAppSettings={updateAppSettings}
+      onChooseHomeBackgroundImage={chooseHomeBackgroundImage}
+      onResetHomeBackground={resetHomeBackground}
+      onRemoveHomeBackground={removeHomeBackground}
     />
   );
 }
