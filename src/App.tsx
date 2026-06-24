@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LibraryView } from "./components/LibraryView";
 import { ReaderView } from "./components/ReaderView";
 import { StatsView } from "./components/StatsView";
-import type { BookItem, LibraryStore } from "./types";
+import { DEFAULT_APP_SETTINGS } from "./types";
+import type { AppSettings, BookItem, LibraryStore } from "./types";
 
 export function App() {
   const [store, setStore] = useState<LibraryStore>({ version: 1, books: [] });
   const [activeBook, setActiveBook] = useState<BookItem | null>(null);
   const [screen, setScreen] = useState<"library" | "stats">("library");
+  const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const refreshTimer = useRef<number | null>(null);
@@ -26,6 +28,7 @@ export function App() {
       .then(setStore)
       .catch((reason) => setError(String(reason)))
       .finally(() => setIsLoading(false));
+    window.ereader.getAppSettings().then(setAppSettings).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -73,6 +76,12 @@ export function App() {
     return updated;
   }, []);
 
+  const updateAppSettings = useCallback(async (patch: Partial<AppSettings>) => {
+    const updated = await window.ereader.updateAppSettings(patch);
+    setAppSettings(updated);
+    return updated;
+  }, []);
+
   async function removeBook(id: string) {
     setStore(await window.ereader.removeBook(id));
     setActiveBook((current) => (current?.id === id ? null : current));
@@ -109,6 +118,8 @@ export function App() {
         book={activeBook}
         onBack={() => setActiveBook(null)}
         onUpdateBook={updateBook}
+        appSettings={appSettings}
+        onUpdateAppSettings={updateAppSettings}
       />
     );
   }

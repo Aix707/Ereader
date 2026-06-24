@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld("ereader", {
   cancelImport: (id) => ipcRenderer.invoke("cache:cancelImport", id),
   getDiagnostics: () => ipcRenderer.invoke("diagnostics:summary"),
   getStats: () => ipcRenderer.invoke("stats:summary"),
+  getAppSettings: () => ipcRenderer.invoke("settings:get"),
+  updateAppSettings: (patch) => ipcRenderer.invoke("settings:update", patch),
+  listSystemFonts: () => ipcRenderer.invoke("system:listFonts"),
   onImportStateChanged: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("import:stateChanged", listener);

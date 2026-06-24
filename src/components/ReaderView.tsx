@@ -5,31 +5,45 @@ import {
   ChevronsRight,
   Columns2,
   Images,
-  Minus,
   PanelLeftOpen,
   PanelLeftClose,
-  Plus,
-  RectangleHorizontal
+  RectangleHorizontal,
+  Search,
+  Type
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { PageFlowReader } from "./readers/PageFlowReader";
 import { TextFlowReader } from "./readers/TextFlowReader";
 import { WindowControls } from "./WindowControls";
-import type { BookItem, BookPatch, ContentType, PageSpread, ReaderPreferences, ReadingDirection, ReadingProgress } from "../types";
+import type {
+  AppSettings,
+  BookItem,
+  BookPatch,
+  ContentType,
+  NovelReadingSettings,
+  PageSpread,
+  ReaderPreferences,
+  ReadingDirection,
+  ReadingProgress,
+  SystemFontItem
+} from "../types";
 import { formatPercent, labelForContentType, labelForFormat } from "../lib/format";
 
 interface ReaderViewProps {
   book: BookItem;
   onBack: () => void;
   onUpdateBook: (id: string, patch: BookPatch) => Promise<BookItem>;
+  appSettings: AppSettings;
+  onUpdateAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
 }
 
-export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
+export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAppSettings }: ReaderViewProps) {
   const [progressPercent, setProgressPercent] = useState(book.progress.percent || 0);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
   const [showToc, setShowToc] = useState(true);
+  const [typographyOpen, setTypographyOpen] = useState(false);
   const saveTimer = useRef<number | null>(null);
   const pendingProgress = useRef<Partial<ReadingProgress> | null>(null);
   const chromeTimer = useRef<number | null>(null);
@@ -102,6 +116,18 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
     [book.id, onUpdateBook]
   );
 
+  const updateNovelReading = useCallback(
+    (patch: Partial<NovelReadingSettings>) => {
+      onUpdateAppSettings({
+        novelReading: {
+          ...appSettings.novelReading,
+          ...patch
+        }
+      }).catch(() => undefined);
+    },
+    [appSettings.novelReading, onUpdateAppSettings]
+  );
+
   const ignoreProgressLabel = useCallback(() => undefined, []);
 
   const handleToolbarDoubleClick = useCallback((event: MouseEvent<HTMLElement>) => {
@@ -141,6 +167,10 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
   const isComic = book.contentType === "comic";
   const isReady = book.importStatus === "ready" || !book.importStatus;
   const usePageReader = book.contentType === "comic" || book.format === "pdf" || book.format === "image-folder";
+  const sidePanelVisible = showToc && (!isFullScreen || chromeVisible);
+  const sidePanelTitle = isComic
+    ? showToc ? "隐藏缩略图" : "显示缩略图"
+    : showToc ? "隐藏目录" : "显示目录";
 
   return (
     <main
@@ -196,24 +226,13 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
             </>
           )}
 
-          {!isComic && (
-            <div className="size-tools">
-              <button
-                className="toolbar-button"
-                onClick={() => updatePreference({ fontSize: Math.max(14, book.preferences.fontSize - 1) })}
-                title="减小字号"
-              >
-                <Minus size={16} />
-              </button>
-              <span>{book.preferences.fontSize}px</span>
-              <button
-                className="toolbar-button"
-                onClick={() => updatePreference({ fontSize: Math.min(28, book.preferences.fontSize + 1) })}
-                title="增大字号"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
+          {!usePageReader && (
+            <TypographyMenu
+              open={typographyOpen}
+              settings={appSettings.novelReading}
+              onOpenChange={setTypographyOpen}
+              onChange={updateNovelReading}
+            />
           )}
           <WindowControls />
         </div>
@@ -231,27 +250,29 @@ export function ReaderView({ book, onBack, onUpdateBook }: ReaderViewProps) {
         ) : usePageReader ? (
           <PageFlowReader
             book={book}
+            showThumbnails={sidePanelVisible}
             onProgress={saveProgress}
             onProgressLabel={ignoreProgressLabel}
           />
         ) : (
           <TextFlowReader
             book={book}
-            showToc={showToc}
+            showToc={sidePanelVisible}
+            novelSettings={appSettings.novelReading}
             onProgress={saveProgress}
             onProgressLabel={ignoreProgressLabel}
           />
         )}
       </section>
 
-      {!usePageReader && (
+      {isReady && (
         <footer className="reader-status">
           <div className="reader-status-group">
             <button
               className="reader-status-button"
               onClick={() => setShowToc((value) => !value)}
-              title={showToc ? "隐藏目录" : "显示目录"}
-              aria-label={showToc ? "隐藏目录" : "显示目录"}
+              title={sidePanelTitle}
+              aria-label={sidePanelTitle}
             >
               {showToc ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
             </button>
@@ -287,4 +308,202 @@ function SegmentedControl({
       ))}
     </div>
   );
+}
+
+function TypographyMenu({
+  open,
+  settings,
+  onOpenChange,
+  onChange
+}: {
+  open: boolean;
+  settings: NovelReadingSettings;
+  onOpenChange: (open: boolean) => void;
+  onChange: (patch: Partial<NovelReadingSettings>) => void;
+}) {
+  const [fonts, setFonts] = useState<SystemFontItem[]>([]);
+  const [query, setQuery] = useState("");
+  const [isLoadingFonts, setIsLoadingFonts] = useState(false);
+  const [fontWasReset, setFontWasReset] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setIsLoadingFonts(true);
+    window.ereader
+      .listSystemFonts()
+      .then((items) => {
+        if (!cancelled) setFonts(items);
+      })
+      .catch(() => {
+        if (!cancelled) setFonts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingFonts(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      onOpenChange(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onOpenChange(false);
+    }
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onOpenChange, open]);
+
+  const fontOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const values: SystemFontItem[] = [{ family: "serif", source: "fallback" }, ...fonts];
+    return values.filter((item) => {
+      const key = item.family.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [fonts]);
+
+  const selectedFontExists = useMemo(
+    () => fontOptions.some((item) => item.family.toLowerCase() === settings.fontFamily.toLowerCase()),
+    [fontOptions, settings.fontFamily]
+  );
+
+  useEffect(() => {
+    if (!open || isLoadingFonts || selectedFontExists || fontWasReset) return;
+    setFontWasReset(true);
+    onChange({ fontFamily: "serif" });
+  }, [fontWasReset, isLoadingFonts, onChange, open, selectedFontExists]);
+
+  const filteredFonts = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return fontOptions;
+    return fontOptions.filter((item) => item.family.toLowerCase().includes(needle));
+  }, [fontOptions, query]);
+
+  return (
+    <div className="typography-menu" ref={menuRef}>
+      <button
+        className={open ? "toolbar-button active" : "toolbar-button"}
+        onClick={() => onOpenChange(!open)}
+        title="小说排版"
+        aria-label="小说排版"
+      >
+        <Type size={16} />
+      </button>
+      {open && (
+        <div className="typography-popover">
+          <header>
+            <strong>小说排版</strong>
+            <span>{settings.fontSize}px · {settings.lineHeight.toFixed(2)}</span>
+          </header>
+
+          <label className="typography-field">
+            <span>
+              字体
+              {settings.fontFamily === "serif" && <em>系统默认衬线</em>}
+            </span>
+            <div className="font-search">
+              <Search size={14} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索系统字体" />
+            </div>
+            <select
+              value={selectedFontExists ? settings.fontFamily : "serif"}
+              onChange={(event) => {
+                setFontWasReset(false);
+                onChange({ fontFamily: event.target.value });
+              }}
+            >
+              {filteredFonts.map((font) => (
+                <option key={`${font.source}:${font.family}`} value={font.family}>
+                  {font.family === "serif" ? "系统默认衬线" : font.family}
+                </option>
+              ))}
+            </select>
+            {isLoadingFonts && <small>正在读取系统字体...</small>}
+            {fontWasReset && <small>上次选择的字体不可用，已回退到默认字体。</small>}
+          </label>
+
+          <TypographyRange
+            label="字号"
+            value={settings.fontSize}
+            min={16}
+            max={28}
+            step={1}
+            suffix="px"
+            onChange={(fontSize) => onChange({ fontSize })}
+          />
+          <TypographyRange
+            label="行距"
+            value={settings.lineHeight}
+            min={1.45}
+            max={2.2}
+            step={0.05}
+            onChange={(lineHeight) => onChange({ lineHeight })}
+          />
+          <TypographyRange
+            label="段距"
+            value={settings.paragraphSpacing}
+            min={0.4}
+            max={2.2}
+            step={0.05}
+            suffix="em"
+            onChange={(paragraphSpacing) => onChange({ paragraphSpacing })}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TypographyRange({
+  label,
+  value,
+  min,
+  max,
+  step,
+  suffix = "",
+  onChange
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  suffix?: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="typography-range">
+      <span>
+        {label}
+        <strong>{formatSettingValue(value, suffix)}</strong>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </label>
+  );
+}
+
+function formatSettingValue(value: number, suffix: string) {
+  if (suffix === "px") return `${Math.round(value)}px`;
+  if (suffix === "em") return `${value.toFixed(2)}em`;
+  return value.toFixed(2);
 }

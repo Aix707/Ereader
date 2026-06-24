@@ -14,6 +14,14 @@ const DEFAULT_COMIC_PREFS = {
   ...DEFAULT_PREFS,
   pageSpread: "double"
 };
+const DEFAULT_APP_SETTINGS = {
+  novelReading: {
+    fontSize: 18,
+    fontFamily: "serif",
+    lineHeight: 1.8,
+    paragraphSpacing: 1.1
+  }
+};
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PROGRESS_ACTIVITY_INTERVAL_MS = 5 * 60 * 1000;
 const PROGRESS_ACTIVITY_DELTA = 0.02;
@@ -34,6 +42,36 @@ function clamp01(value) {
   const number = Number(value || 0);
   if (!Number.isFinite(number)) return 0;
   return Math.max(0, Math.min(1, number));
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
+}
+
+function safeFontFamily(value) {
+  const family = String(value || "").replace(/[\u0000-\u001f;"{}]/g, "").trim();
+  return family ? family.slice(0, 120) : DEFAULT_APP_SETTINGS.novelReading.fontFamily;
+}
+
+function normalizeNovelReadingSettings(value = {}) {
+  const defaults = DEFAULT_APP_SETTINGS.novelReading;
+  return {
+    fontSize: Math.round(clampNumber(value.fontSize, 16, 28, defaults.fontSize)),
+    fontFamily: safeFontFamily(value.fontFamily || defaults.fontFamily),
+    lineHeight: Number(clampNumber(value.lineHeight, 1.45, 2.2, defaults.lineHeight).toFixed(2)),
+    paragraphSpacing: Number(clampNumber(value.paragraphSpacing, 0.4, 2.2, defaults.paragraphSpacing).toFixed(2))
+  };
+}
+
+function normalizeAppSettings(value = {}) {
+  return {
+    novelReading: normalizeNovelReadingSettings({
+      ...DEFAULT_APP_SETTINGS.novelReading,
+      ...(value.novelReading || {})
+    })
+  };
 }
 
 function startOfLocalDay(date) {
@@ -236,6 +274,12 @@ function createRepository(userDataPath) {
       finished_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS reading_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -258,6 +302,14 @@ function createRepository(userDataPath) {
     bookById: db.prepare("SELECT * FROM books WHERE id = ?"),
     prefsById: db.prepare("SELECT * FROM preferences WHERE book_id = ?"),
     progressById: db.prepare("SELECT * FROM progress WHERE book_id = ?"),
+    settingByKey: db.prepare("SELECT value_json AS valueJson FROM app_settings WHERE key = ?"),
+    upsertSetting: db.prepare(
+      `INSERT INTO app_settings (key, value_json, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+        value_json = excluded.value_json,
+        updated_at = excluded.updated_at`
+    ),
     coverById: db.prepare(
       `SELECT a.id AS coverAssetId, a.width AS coverWidth, a.height AS coverHeight
        FROM reading_units ru
@@ -398,6 +450,29 @@ function createRepository(userDataPath) {
   function listBooks() {
     const rows = db.prepare("SELECT * FROM books ORDER BY COALESCE(last_opened_at, added_at) DESC").all();
     return { version: 2, dbPath, books: rows.map(rowToBook) };
+  }
+
+  function getAppSettings() {
+    const row = statements.settingByKey.get("app");
+    if (!row?.valueJson) return normalizeAppSettings(DEFAULT_APP_SETTINGS);
+    try {
+      return normalizeAppSettings(JSON.parse(row.valueJson));
+    } catch {
+      return normalizeAppSettings(DEFAULT_APP_SETTINGS);
+    }
+  }
+
+  function updateAppSettings(patch = {}) {
+    const next = normalizeAppSettings({
+      ...getAppSettings(),
+      ...patch,
+      novelReading: {
+        ...getAppSettings().novelReading,
+        ...(patch.novelReading || {})
+      }
+    });
+    statements.upsertSetting.run("app", JSON.stringify(next), nowIso());
+    return next;
   }
 
   function upsertBook(source) {
@@ -899,6 +974,8 @@ function createRepository(userDataPath) {
     db,
     dbPath,
     listBooks,
+    getAppSettings,
+    updateAppSettings,
     getBook,
     getRawBook,
     upsertBook,
@@ -926,6 +1003,7 @@ function createRepository(userDataPath) {
 module.exports = {
   createRepository,
   DEFAULT_PREFS,
+  DEFAULT_APP_SETTINGS,
   sha256,
   sourceStats
 };

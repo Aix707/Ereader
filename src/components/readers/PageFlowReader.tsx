@@ -5,6 +5,7 @@ import type { BookItem, PageUnit, ReadingProgress } from "../../types";
 
 interface PageFlowReaderProps {
   book: BookItem;
+  showThumbnails: boolean;
   onProgress: (progress: Partial<ReadingProgress>) => void;
   onProgressLabel: (label: string) => void;
 }
@@ -16,6 +17,8 @@ const DECODE_CACHE_MAX_ASSETS = 18;
 const DECODE_CACHE_MAX_BYTES = 128 * 1024 * 1024;
 const WHEEL_PAGE_THRESHOLD = 48;
 const WHEEL_COOLDOWN_MS = 180;
+const THUMBNAIL_ITEM_HEIGHT = 116;
+const THUMBNAIL_OVERSCAN_ITEMS = 8;
 
 interface DecodeCacheEntry {
   image: HTMLImageElement;
@@ -26,7 +29,7 @@ interface DecodeCacheEntry {
   promise?: Promise<void>;
 }
 
-export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowReaderProps) {
+export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLabel }: PageFlowReaderProps) {
   const [pages, setPages] = useState<PageUnit[]>([]);
   const [currentIndex, setCurrentIndex] = useState(() => pageIndexFromProgress(book.progress));
   const [isJumping, setIsJumping] = useState(false);
@@ -73,6 +76,10 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
       .map((index) => pages[index])
       .filter((page): page is PageUnit => Boolean(page) && !visibleIds.has(page.id));
   }, [currentIndex, pages, spreadSize, visiblePages]);
+  const activePageIndexes = useMemo(
+    () => new Set(pageIndexesForSpread(currentIndex, spreadSize, pages.length)),
+    [currentIndex, pages.length, spreadSize]
+  );
 
   const preloadAroundIndex = useCallback(
     (targetIndex: number, radius = PRELOAD_SPREAD_RADIUS) => {
@@ -256,45 +263,55 @@ export function PageFlowReader({ book, onProgress, onProgressLabel }: PageFlowRe
   if (!pages.length) return <div className="reader-loading">正在读取页面缓存...</div>;
 
   return (
-    <div className="comic-reader" onWheel={handleWheel} title="滚轮上下翻页，方向键左右翻页">
-      <button className="page-turn left" onClick={goPrevious} disabled={currentIndex <= 0}>
-        <ChevronLeft size={22} />
-      </button>
-      <div ref={pagesRef} className={`comic-pages ${visiblePages.length > 1 ? "double-spread" : "single-spread"}`}>
-        {visiblePages.map((page) => (
-          <PageImage key={page.id} page={page} maxWidth={pageBounds.width} maxHeight={pageBounds.height} />
-        ))}
-      </div>
-      <div className="comic-preload-layer" aria-hidden="true">
-        {hiddenPreloadPages.map((page) => (
-          <img
-            key={page.id}
-            src={window.ereader.getAssetUrl(page.assetId)}
-            alt=""
-            loading="eager"
-            decoding="async"
-          />
-        ))}
-      </div>
-      <button className="page-turn right" onClick={goNext} disabled={currentIndex >= lastSpreadStart}>
-        <ChevronRight size={22} />
-      </button>
-      <div className="floating-page-indicator">
-        {isJumping ? (
-          <input
-            ref={jumpInputRef}
-            value={jumpValue}
-            onChange={(event) => setJumpValue(event.target.value)}
-            onKeyDown={handleJumpKeyDown}
-            onBlur={applyPageJump}
-            inputMode="numeric"
-            aria-label="跳转页码"
-          />
-        ) : (
-          <button type="button" onClick={openPageJump} title="跳转页码">
-            {currentIndex + 1}/{pages.length}
-          </button>
-        )}
+    <div className={`page-reader-layout${showThumbnails ? "" : " thumbnails-hidden"}`}>
+      {showThumbnails && (
+        <ComicThumbnailPanel
+          pages={pages}
+          currentIndex={currentIndex}
+          activePageIndexes={activePageIndexes}
+          onSelect={goToIndex}
+        />
+      )}
+      <div className="comic-reader" onWheel={handleWheel} title="滚轮上下翻页，方向键左右翻页">
+        <button className="page-turn left" onClick={goPrevious} disabled={currentIndex <= 0}>
+          <ChevronLeft size={22} />
+        </button>
+        <div ref={pagesRef} className={`comic-pages ${visiblePages.length > 1 ? "double-spread" : "single-spread"}`}>
+          {visiblePages.map((page) => (
+            <PageImage key={page.id} page={page} maxWidth={pageBounds.width} maxHeight={pageBounds.height} />
+          ))}
+        </div>
+        <div className="comic-preload-layer" aria-hidden="true">
+          {hiddenPreloadPages.map((page) => (
+            <img
+              key={page.id}
+              src={window.ereader.getAssetUrl(page.assetId)}
+              alt=""
+              loading="eager"
+              decoding="async"
+            />
+          ))}
+        </div>
+        <button className="page-turn right" onClick={goNext} disabled={currentIndex >= lastSpreadStart}>
+          <ChevronRight size={22} />
+        </button>
+        <div className="floating-page-indicator">
+          {isJumping ? (
+            <input
+              ref={jumpInputRef}
+              value={jumpValue}
+              onChange={(event) => setJumpValue(event.target.value)}
+              onKeyDown={handleJumpKeyDown}
+              onBlur={applyPageJump}
+              inputMode="numeric"
+              aria-label="跳转页码"
+            />
+          ) : (
+            <button type="button" onClick={openPageJump} title="跳转页码">
+              {currentIndex + 1}/{pages.length}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -329,6 +346,88 @@ function PageImage({ page, maxWidth, maxHeight }: { page: PageUnit; maxWidth: nu
         <span>载入中</span>
       )}
     </div>
+  );
+}
+
+function ComicThumbnailPanel({
+  pages,
+  currentIndex,
+  activePageIndexes,
+  onSelect
+}: {
+  pages: PageUnit[];
+  currentIndex: number;
+  activePageIndexes: Set<number>;
+  onSelect: (index: number) => void;
+}) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [renderRange, setRenderRange] = useState({ start: 0, end: 28 });
+
+  const updateRenderRange = useCallback(() => {
+    const element = listRef.current;
+    if (!element) return;
+    const start = Math.max(0, Math.floor(element.scrollTop / THUMBNAIL_ITEM_HEIGHT) - THUMBNAIL_OVERSCAN_ITEMS);
+    const visible = Math.ceil(element.clientHeight / THUMBNAIL_ITEM_HEIGHT) + THUMBNAIL_OVERSCAN_ITEMS * 2;
+    const end = Math.min(pages.length - 1, start + visible);
+    setRenderRange((current) => (current.start === start && current.end === end ? current : { start, end }));
+  }, [pages.length]);
+
+  useEffect(() => {
+    updateRenderRange();
+    const element = listRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(updateRenderRange);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [updateRenderRange]);
+
+  useEffect(() => {
+    const element = listRef.current;
+    const target = element?.querySelector<HTMLElement>(`[data-page-index="${currentIndex}"]`);
+    target?.scrollIntoView({ block: "nearest" });
+    window.requestAnimationFrame(updateRenderRange);
+  }, [currentIndex, updateRenderRange]);
+
+  return (
+    <aside className="toc-panel comic-thumbnail-panel">
+      <div className="toc-header">
+        <strong>缩略图</strong>
+        <span>{pages.length} 页</span>
+      </div>
+      <div ref={listRef} className="comic-thumbnail-list" onScroll={updateRenderRange}>
+        {pages.map((page, index) => {
+          const shouldLoad = index >= renderRange.start && index <= renderRange.end || Math.abs(index - currentIndex) <= 5;
+          return (
+            <button
+              key={page.id}
+              className={activePageIndexes.has(index) ? "active" : ""}
+              data-page-index={index}
+              onClick={() => onSelect(index)}
+              title={`第 ${index + 1} 页`}
+            >
+              <span className="comic-thumbnail-frame">
+                {shouldLoad ? <ThumbnailImage page={page} /> : <i />}
+              </span>
+              <strong>{index + 1}</strong>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+function ThumbnailImage({ page }: { page: PageUnit }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <i />;
+  return (
+    <img
+      src={window.ereader.getAssetUrl(page.assetId)}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
   );
 }
 

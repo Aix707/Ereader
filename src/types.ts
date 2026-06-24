@@ -3,6 +3,33 @@ export type ContentType = "novel" | "comic";
 export type PageSpread = "single" | "double";
 export type ReadingDirection = "ltr" | "rtl";
 
+export interface NovelReadingSettings {
+  fontSize: number;
+  fontFamily: string;
+  lineHeight: number;
+  paragraphSpacing: number;
+}
+
+export interface AppSettings {
+  novelReading: NovelReadingSettings;
+}
+
+export interface SystemFontItem {
+  family: string;
+  source: "system" | "fallback";
+}
+
+export const DEFAULT_NOVEL_READING_SETTINGS: NovelReadingSettings = {
+  fontSize: 18,
+  fontFamily: "serif",
+  lineHeight: 1.8,
+  paragraphSpacing: 1.1
+};
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  novelReading: DEFAULT_NOVEL_READING_SETTINGS
+};
+
 export interface ReaderPreferences {
   fontSize: number;
   lineHeight: number;

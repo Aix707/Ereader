@@ -1,6 +1,17 @@
 /// <reference types="vite/client" />
 
-import type { BookItem, BookPatch, DiagnosticsSummary, ImportStateChange, LibraryStore, PageUnit, StatsSummary, TextUnit } from "./types";
+import type {
+  AppSettings,
+  BookItem,
+  BookPatch,
+  DiagnosticsSummary,
+  ImportStateChange,
+  LibraryStore,
+  PageUnit,
+  StatsSummary,
+  SystemFontItem,
+  TextUnit
+} from "./types";
 
 declare global {
   interface Window {
@@ -19,6 +30,9 @@ declare global {
       cancelImport: (id: string) => Promise<BookItem>;
       getDiagnostics: () => Promise<DiagnosticsSummary>;
       getStats: () => Promise<StatsSummary>;
+      getAppSettings: () => Promise<AppSettings>;
+      updateAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+      listSystemFonts: () => Promise<SystemFontItem[]>;
       onImportStateChanged: (callback: (state: ImportStateChange) => void) => () => void;
       windowControls: {
         minimize: () => Promise<void>;

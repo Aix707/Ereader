@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, protocol, shell } = require("
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { execFileSync } = require("node:child_process");
 const { createRepository } = require("./database.cjs");
 const { detectContentType } = require("./content-detector.cjs");
 const { imageFilesInFolder } = require("./importer.cjs");
@@ -17,6 +18,12 @@ let mainWindow;
 let repo;
 let importer;
 const APP_ICON = path.join(__dirname, "..", "assets", "app-icon.png");
+const FONT_REGISTRY_KEYS = [
+  "HKCU\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts",
+  "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
+];
+const FALLBACK_FONTS = ["serif", "system-ui", "SimSun", "Microsoft YaHei", "KaiTi", "SimHei"];
+let fontCache = null;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -71,6 +78,79 @@ function windowState() {
     isMaximized: Boolean(mainWindow?.isMaximized()),
     isFullScreen: Boolean(mainWindow?.isFullScreen())
   };
+}
+
+function listSystemFonts() {
+  if (fontCache) return fontCache;
+  const systemNames = new Set();
+  for (const key of FONT_REGISTRY_KEYS) {
+    try {
+      const output = execFileSync("reg", ["query", key], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 2500
+      });
+      for (const line of output.split(/\r?\n/)) {
+        const match = line.match(/^\s{2,}(.+?)\s+REG_\w+\s+(.+)$/);
+        if (!match) continue;
+        for (const family of fontFamiliesFromRegistryName(match[1])) {
+          systemNames.add(family);
+        }
+      }
+    } catch {
+      // Registry access can fail on unusual Windows installs; font folder fallback handles that.
+    }
+  }
+
+  try {
+    const fontDir = path.join(process.env.WINDIR || "C:\\Windows", "Fonts");
+    for (const entry of fs.readdirSync(fontDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !/\.(ttf|ttc|otf)$/i.test(entry.name)) continue;
+      const family = path.basename(entry.name, path.extname(entry.name)).replace(/[_-]+/g, " ").trim();
+      if (family) systemNames.add(family);
+    }
+  } catch {
+    // Ignore fallback failures and rely on the static list below.
+  }
+
+  const preferred = ["Microsoft YaHei", "Microsoft YaHei UI", "SimSun", "SimHei", "KaiTi", "DengXian", "FangSong"];
+  const orderedSystem = [
+    ...preferred.filter((family) => systemNames.has(family)),
+    ...[...systemNames].sort((left, right) => left.localeCompare(right, "zh-CN"))
+  ];
+  const seen = new Set();
+  const fonts = [];
+  for (const family of FALLBACK_FONTS) {
+    const normalized = normalizeFontFamilyName(family);
+    if (!normalized || seen.has(normalized.toLowerCase())) continue;
+    seen.add(normalized.toLowerCase());
+    fonts.push({ family: normalized, source: "fallback" });
+  }
+  for (const family of orderedSystem) {
+    const normalized = normalizeFontFamilyName(family);
+    if (!normalized || seen.has(normalized.toLowerCase())) continue;
+    seen.add(normalized.toLowerCase());
+    fonts.push({ family: normalized, source: "system" });
+  }
+  fontCache = fonts;
+  return fontCache;
+}
+
+function fontFamiliesFromRegistryName(value) {
+  const clean = normalizeFontFamilyName(
+    String(value || "")
+      .replace(/\s*\((TrueType|OpenType|Type 1|Raster)\)\s*$/i, "")
+      .replace(/\s*\([^)]+\)\s*$/g, "")
+  );
+  if (!clean) return [];
+  return clean
+    .split(/\s*&\s*/)
+    .map(normalizeFontFamilyName)
+    .filter(Boolean);
+}
+
+function normalizeFontFamilyName(value) {
+  return String(value || "").replace(/[\u0000-\u001f;"{}]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
 function registerAssetProtocol() {
@@ -282,6 +362,9 @@ ipcMain.handle("cache:cancelImport", (_event, id) => {
 
 ipcMain.handle("diagnostics:summary", () => repo.diagnosticsSummary());
 ipcMain.handle("stats:summary", () => repo.statsSummary());
+ipcMain.handle("settings:get", () => repo.getAppSettings());
+ipcMain.handle("settings:update", (_event, patch) => repo.updateAppSettings(patch || {}));
+ipcMain.handle("system:listFonts", () => listSystemFonts());
 
 ipcMain.handle("window:minimize", () => {
   mainWindow?.minimize();

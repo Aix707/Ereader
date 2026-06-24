@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import type { BookItem, ReadingProgress, TextUnit } from "../../types";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { BookItem, NovelReadingSettings, ReadingProgress, TextUnit } from "../../types";
 import { formatPercent } from "../../lib/format";
 
 interface TextFlowReaderProps {
   book: BookItem;
   showToc: boolean;
+  novelSettings: NovelReadingSettings;
   onProgress: (progress: Partial<ReadingProgress>) => void;
   onProgressLabel: (label: string) => void;
 }
@@ -15,7 +16,7 @@ const TEXT_PAGE_MAX_WIDTH = 800;
 const TEXT_PAGE_HORIZONTAL_PADDING = 128;
 const TEXT_PAGE_BOTTOM_SAFETY = 180;
 
-export function TextFlowReader({ book, showToc, onProgress, onProgressLabel }: TextFlowReaderProps) {
+export function TextFlowReader({ book, showToc, novelSettings, onProgress, onProgressLabel }: TextFlowReaderProps) {
   const [units, setUnits] = useState<TextUnit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -54,12 +55,13 @@ export function TextFlowReader({ book, showToc, onProgress, onProgressLabel }: T
         estimateUnitHeight(
           unit,
           contentWidth,
-          book.preferences.fontSize,
-          book.preferences.lineHeight,
+          novelSettings.fontSize,
+          novelSettings.lineHeight,
+          novelSettings.paragraphSpacing,
           viewportSize.height
         )
       ),
-    [book.preferences.fontSize, book.preferences.lineHeight, contentWidth, units, viewportSize.height]
+    [contentWidth, novelSettings.fontSize, novelSettings.lineHeight, novelSettings.paragraphSpacing, units, viewportSize.height]
   );
 
   const virtualOffsets = useMemo(() => {
@@ -219,9 +221,11 @@ export function TextFlowReader({ book, showToc, onProgress, onProgressLabel }: T
         <div
           className="text-page"
           style={{
-            fontSize: book.preferences.fontSize,
-            lineHeight: book.preferences.lineHeight
-          }}
+            "--novel-paragraph-spacing": `${novelSettings.paragraphSpacing}em`,
+            fontFamily: cssFontFamily(novelSettings.fontFamily),
+            fontSize: novelSettings.fontSize,
+            lineHeight: novelSettings.lineHeight
+          } as CSSProperties}
         >
           <div className="text-virtual-spacer" style={{ height: spacerHeight }}>
             <div
@@ -298,10 +302,12 @@ function estimateUnitHeight(
   contentWidth: number,
   fontSize: number,
   lineHeight: number,
+  paragraphSpacing: number,
   viewportHeight: number
 ) {
   const linePx = Math.max(18, fontSize * lineHeight);
-  const blockMargin = Math.max(14, fontSize * 1.1);
+  const paragraphPx = Math.max(8, fontSize * paragraphSpacing);
+  const blockMargin = Math.max(14, paragraphPx);
 
   if (unit.type === "heading") {
     return Math.ceil(linePx * 1.7 + blockMargin * 1.8);
@@ -322,7 +328,7 @@ function estimateUnitHeight(
     .split(/\n/)
     .map((line) => Math.max(1, Math.ceil(measureTextUnits(line.trim()) / charsPerLine)))
     .reduce((sum, count) => sum + count, 0);
-  return Math.ceil(Math.max(1, lines) * linePx + blockMargin * 1.28);
+  return Math.ceil(Math.max(1, lines) * linePx + paragraphPx);
 }
 
 function stripHtml(value: string) {
@@ -339,6 +345,13 @@ function measureTextUnits(value: string) {
 
 function clamp(value: number) {
   return Math.max(0, Math.min(1, value));
+}
+
+function cssFontFamily(value: string) {
+  const family = String(value || "").replace(/[\u0000-\u001f;"{}]/g, "").trim();
+  if (!family || family === "serif") return '"Times New Roman", SimSun, serif';
+  if (family === "system-ui") return 'system-ui, "Segoe UI", "Microsoft YaHei UI", sans-serif';
+  return `"${family.replace(/\\/g, "")}", "Microsoft YaHei", SimSun, serif`;
 }
 
 function findUnitAtOffset(offsets: number[], target: number) {
