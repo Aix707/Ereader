@@ -12,10 +12,11 @@ import {
   TriangleAlert
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { AppSettings, StatsSummary } from "../types";
 import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat } from "../lib/format";
 import { globalBackgroundStyle } from "../lib/appearance";
+import { useTitlebarDoubleClick } from "../lib/ui";
 import { WindowControls } from "./WindowControls";
 
 interface StatsViewProps {
@@ -28,6 +29,7 @@ export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
   const [summary, setSummary] = useState<StatsSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const shellStyle = useMemo(() => globalBackgroundStyle(appSettings.appearance), [appSettings.appearance]);
+  const handleTitlebarDoubleClick = useTitlebarDoubleClick("button, .window-controls");
 
   async function refresh() {
     setError(null);
@@ -43,12 +45,6 @@ export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
     const timer = window.setInterval(refresh, 2500);
     return () => window.clearInterval(timer);
   }, []);
-
-  function handleTitlebarDoubleClick(event: MouseEvent<HTMLElement>) {
-    const target = event.target as HTMLElement;
-    if (target.closest("button, .window-controls")) return;
-    window.ereader.windowControls.toggleMaximize().catch(() => undefined);
-  }
 
   const maxDailyEvents = useMemo(
     () => Math.max(1, ...(summary?.activityByDay.map((item) => item.events) || [0])),

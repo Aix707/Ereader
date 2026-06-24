@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { BookItem, NovelReadingSettings, ReadingProgress, TextUnit } from "../../types";
 import { formatPercent } from "../../lib/format";
+import { clampUnit } from "../../lib/number";
 
 interface TextFlowReaderProps {
   book: BookItem;
@@ -94,7 +95,7 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
   );
   const progressRatio = useMemo(() => {
     const scrollable = Math.max(1, virtualHeight - viewportSize.height);
-    return clamp(scrollTop / scrollable);
+    return clampUnit(scrollTop / scrollable);
   }, [scrollTop, viewportSize.height, virtualHeight]);
   const spacerHeight = virtualHeight + TEXT_PAGE_BOTTOM_SAFETY;
 
@@ -102,7 +103,7 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
     const container = containerRef.current;
     if (!container || restoredRef.current || units.length === 0 || viewportSize.width <= 0 || viewportSize.height <= 0) return;
     requestAnimationFrame(() => {
-      const ratio = clamp(Number(book.progress.scrollRatio ?? book.progress.percent ?? 0));
+      const ratio = clampUnit(book.progress.scrollRatio ?? book.progress.percent);
       const nextScrollTop = ratio * Math.max(0, virtualHeight - container.clientHeight);
       ignoreScrollProgressRef.current = true;
       restoredRef.current = true;
@@ -140,7 +141,7 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
       height: Math.max(1, container.clientHeight)
     });
     const scrollable = Math.max(1, virtualHeight - container.clientHeight);
-    const ratio = Math.max(0, Math.min(1, container.scrollTop / scrollable));
+    const ratio = clampUnit(container.scrollTop / scrollable);
     onProgressLabel(formatPercent(ratio));
     if (!restoredRef.current || ignoreScrollProgressRef.current) return;
     onProgress({ kind: "scroll", scrollRatio: ratio, percent: ratio });
@@ -150,7 +151,7 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
     const container = containerRef.current;
     if (!container) return;
     const scrollable = Math.max(0, virtualHeight - container.clientHeight);
-    const nextScrollTop = clamp(ratio) * scrollable;
+    const nextScrollTop = clampUnit(ratio) * scrollable;
     container.scrollTop = nextScrollTop;
     setScrollTop(nextScrollTop);
   }
@@ -348,10 +349,6 @@ function measureTextUnits(value: string) {
     units += /[\u1100-\u11ff\u2e80-\ua4cf\uf900-\ufaff\uff00-\uffef]/.test(char) ? 1 : 0.58;
   }
   return units;
-}
-
-function clamp(value: number) {
-  return Math.max(0, Math.min(1, value));
 }
 
 function cssFontFamily(value: string) {

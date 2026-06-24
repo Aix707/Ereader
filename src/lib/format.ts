@@ -1,4 +1,5 @@
 import type { BookFormat, ContentType } from "../types";
+import { clampUnit } from "./number";
 
 export function labelForFormat(format: BookFormat) {
   if (format === "image-folder") return "图片文件夹";
@@ -10,7 +11,7 @@ export function labelForContentType(type: ContentType) {
 }
 
 export function formatPercent(value: number) {
-  const percent = Math.max(0, Math.min(1, value || 0));
+  const percent = clampUnit(value);
   return `${Math.round(percent * 100)}%`;
 }
 

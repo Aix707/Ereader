@@ -32,10 +32,10 @@ declare global {
       getStats: () => Promise<StatsSummary>;
       getAppSettings: () => Promise<AppSettings>;
       updateAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
-      chooseHomeBackgroundImage: () => Promise<AppSettings>;
-      resetHomeBackground: () => Promise<AppSettings>;
-      removeHomeBackground: () => Promise<AppSettings>;
-      getHomeBackgroundImageUrl: () => string;
+      chooseBackgroundImage: () => Promise<AppSettings>;
+      resetBackground: () => Promise<AppSettings>;
+      removeBackground: () => Promise<AppSettings>;
+      getBackgroundImageUrl: () => string;
       listSystemFonts: () => Promise<SystemFontItem[]>;
       onImportStateChanged: (callback: (state: ImportStateChange) => void) => () => void;
       windowControls: {

@@ -17,10 +17,10 @@ contextBridge.exposeInMainWorld("ereader", {
   getStats: () => ipcRenderer.invoke("stats:summary"),
   getAppSettings: () => ipcRenderer.invoke("settings:get"),
   updateAppSettings: (patch) => ipcRenderer.invoke("settings:update", patch),
-  chooseHomeBackgroundImage: () => ipcRenderer.invoke("appearance:chooseHomeBackgroundImage"),
-  resetHomeBackground: () => ipcRenderer.invoke("appearance:resetHomeBackground"),
-  removeHomeBackground: () => ipcRenderer.invoke("appearance:removeHomeBackground"),
-  getHomeBackgroundImageUrl: () => "ereader-background://home",
+  chooseBackgroundImage: () => ipcRenderer.invoke("appearance:chooseHomeBackgroundImage"),
+  resetBackground: () => ipcRenderer.invoke("appearance:resetHomeBackground"),
+  removeBackground: () => ipcRenderer.invoke("appearance:removeHomeBackground"),
+  getBackgroundImageUrl: () => "ereader-background://home",
   listSystemFonts: () => ipcRenderer.invoke("system:listFonts"),
   onImportStateChanged: (callback) => {
     const listener = (_event, state) => callback(state);

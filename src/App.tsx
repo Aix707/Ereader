@@ -82,20 +82,20 @@ export function App() {
     return updated;
   }, []);
 
-  const chooseHomeBackgroundImage = useCallback(async () => {
-    const updated = await window.ereader.chooseHomeBackgroundImage();
+  const chooseBackgroundImage = useCallback(async () => {
+    const updated = await window.ereader.chooseBackgroundImage();
     setAppSettings(updated);
     return updated;
   }, []);
 
-  const resetHomeBackground = useCallback(async () => {
-    const updated = await window.ereader.resetHomeBackground();
+  const resetBackground = useCallback(async () => {
+    const updated = await window.ereader.resetBackground();
     setAppSettings(updated);
     return updated;
   }, []);
 
-  const removeHomeBackground = useCallback(async () => {
-    const updated = await window.ereader.removeHomeBackground();
+  const removeBackground = useCallback(async () => {
+    const updated = await window.ereader.removeBackground();
     setAppSettings(updated);
     return updated;
   }, []);
@@ -168,9 +168,9 @@ export function App() {
       onOpenStats={() => setScreen("stats")}
       appSettings={appSettings}
       onUpdateAppSettings={updateAppSettings}
-      onChooseHomeBackgroundImage={chooseHomeBackgroundImage}
-      onResetHomeBackground={resetHomeBackground}
-      onRemoveHomeBackground={removeHomeBackground}
+      onChooseBackgroundImage={chooseBackgroundImage}
+      onResetBackground={resetBackground}
+      onRemoveBackground={removeBackground}
     />
   );
 }

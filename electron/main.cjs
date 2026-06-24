@@ -24,8 +24,8 @@ const FONT_REGISTRY_KEYS = [
   "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"
 ];
 const FALLBACK_FONTS = ["serif", "system-ui", "SimSun", "Microsoft YaHei", "KaiTi", "SimHei"];
-const HOME_BACKGROUND_MAX_EDGE = 2400;
-const HOME_BACKGROUND_FILE = "home-background.webp";
+const BACKGROUND_MAX_EDGE = 2400;
+const BACKGROUND_FILE = "home-background.webp";
 let fontCache = null;
 
 protocol.registerSchemesAsPrivileged([
@@ -166,22 +166,22 @@ function normalizeFontFamilyName(value) {
   return String(value || "").replace(/[\u0000-\u001f;"{}]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
-function homeBackgroundDir() {
+function backgroundDir() {
   return path.join(app.getPath("userData"), "background");
 }
 
-function homeBackgroundPath() {
-  return path.join(homeBackgroundDir(), HOME_BACKGROUND_FILE);
+function backgroundPath() {
+  return path.join(backgroundDir(), BACKGROUND_FILE);
 }
 
-function homeBackgroundVersion(settings = repo.getAppSettings()) {
+function backgroundVersion(settings = repo.getAppSettings()) {
   return Number(settings.appearance?.backgroundImageVersion || 0);
 }
 
 function appSettingsWithValidBackground() {
   const settings = repo.getAppSettings();
   if (settings.appearance.backgroundLayerMode !== "image") return settings;
-  if (fs.existsSync(homeBackgroundPath())) return settings;
+  if (fs.existsSync(backgroundPath())) return settings;
   return repo.updateAppSettings({
     appearance: {
       ...settings.appearance,
@@ -190,7 +190,7 @@ function appSettingsWithValidBackground() {
   });
 }
 
-async function chooseHomeBackgroundImage() {
+async function chooseBackgroundImage() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "选择背景图片",
     properties: ["openFile"],
@@ -200,30 +200,30 @@ async function chooseHomeBackgroundImage() {
   });
   if (result.canceled || result.filePaths.length === 0) return appSettingsWithValidBackground();
 
-  fs.mkdirSync(homeBackgroundDir(), { recursive: true });
+  fs.mkdirSync(backgroundDir(), { recursive: true });
   const buffer = await sharp(result.filePaths[0], { animated: false })
     .rotate()
     .resize({
-      width: HOME_BACKGROUND_MAX_EDGE,
-      height: HOME_BACKGROUND_MAX_EDGE,
+      width: BACKGROUND_MAX_EDGE,
+      height: BACKGROUND_MAX_EDGE,
       fit: "inside",
       withoutEnlargement: true
     })
     .webp({ quality: 88, effort: 4 })
     .toBuffer();
-  fs.writeFileSync(homeBackgroundPath(), buffer);
+  fs.writeFileSync(backgroundPath(), buffer);
 
   const current = repo.getAppSettings();
   return repo.updateAppSettings({
     appearance: {
       ...current.appearance,
       backgroundLayerMode: "image",
-      backgroundImageVersion: homeBackgroundVersion(current) + 1
+      backgroundImageVersion: backgroundVersion(current) + 1
     }
   });
 }
 
-function resetHomeBackground() {
+function resetBackground() {
   const current = repo.getAppSettings();
   return repo.updateAppSettings({
     appearance: {
@@ -233,10 +233,10 @@ function resetHomeBackground() {
   });
 }
 
-function removeHomeBackground() {
+function removeBackground() {
   const current = repo.getAppSettings();
   try {
-    if (fs.existsSync(homeBackgroundPath())) fs.unlinkSync(homeBackgroundPath());
+    if (fs.existsSync(backgroundPath())) fs.unlinkSync(backgroundPath());
   } catch {
     // The mode change still makes the background invisible even if cleanup fails.
   }
@@ -285,7 +285,7 @@ function registerAssetProtocol() {
 function registerBackgroundProtocol() {
   protocol.handle("ereader-background", async () => {
     try {
-      const filePath = homeBackgroundPath();
+      const filePath = backgroundPath();
       if (!fs.existsSync(filePath)) return new Response("Background not found", { status: 404 });
       const data = fs.readFileSync(filePath);
       const etag = `"home-background-${data.length}-${Math.floor(fs.statSync(filePath).mtimeMs)}"`;
@@ -481,9 +481,9 @@ ipcMain.handle("diagnostics:summary", () => repo.diagnosticsSummary());
 ipcMain.handle("stats:summary", () => repo.statsSummary());
 ipcMain.handle("settings:get", () => appSettingsWithValidBackground());
 ipcMain.handle("settings:update", (_event, patch) => repo.updateAppSettings(patch || {}));
-ipcMain.handle("appearance:chooseHomeBackgroundImage", () => chooseHomeBackgroundImage());
-ipcMain.handle("appearance:resetHomeBackground", () => resetHomeBackground());
-ipcMain.handle("appearance:removeHomeBackground", () => removeHomeBackground());
+ipcMain.handle("appearance:chooseHomeBackgroundImage", () => chooseBackgroundImage());
+ipcMain.handle("appearance:resetHomeBackground", () => resetBackground());
+ipcMain.handle("appearance:removeHomeBackground", () => removeBackground());
 ipcMain.handle("system:listFonts", () => listSystemFonts());
 
 ipcMain.handle("window:minimize", () => {
