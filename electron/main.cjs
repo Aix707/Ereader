@@ -12,7 +12,10 @@ const { createWorkerImporter } = require("./import-worker-client.cjs");
 const FILE_FORMATS = new Map([
   [".txt", "txt"],
   [".pdf", "pdf"],
-  [".epub", "epub"]
+  [".epub", "epub"],
+  [".mobi", "mobi"],
+  [".azw", "mobi"],
+  [".azw3", "mobi"]
 ]);
 
 let mainWindow;
@@ -416,10 +419,11 @@ ipcMain.handle("dialog:importFiles", async () => {
     title: "导入书籍",
     properties: ["openFile", "multiSelections"],
     filters: [
-      { name: "Supported books", extensions: ["txt", "pdf", "epub"] },
+      { name: "Supported books", extensions: ["txt", "pdf", "epub", "mobi", "azw", "azw3"] },
       { name: "Text", extensions: ["txt"] },
       { name: "PDF", extensions: ["pdf"] },
-      { name: "EPUB", extensions: ["epub"] }
+      { name: "EPUB", extensions: ["epub"] },
+      { name: "MOBI", extensions: ["mobi", "azw", "azw3"] }
     ]
   });
   if (result.canceled) return repo.listBooks();

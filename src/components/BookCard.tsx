@@ -18,7 +18,7 @@ export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCa
   const progressValue = Math.round(clampUnit(book.progress.percent) * 100);
   const importStatus = book.importStatus || "ready";
   const canOpen = isBookReady(book);
-  const canToggleContent = book.format === "pdf" || book.format === "epub";
+  const canToggleContent = book.format === "pdf" || book.format === "epub" || book.format === "mobi";
   const cardRef = useRef<HTMLElement>(null);
   const [panelSide, setPanelSide] = useState<"left" | "right">("right");
   const lastReadText = book.lastOpenedAt ? `最近 ${formatRelativeDate(book.lastOpenedAt)}` : "尚未阅读";
@@ -125,17 +125,17 @@ export function isBookReady(book: BookItem) {
 
 function BookCover({ book, progressValue }: { book: BookItem; progressValue: number }) {
   const assetUrl = book.coverAssetId ? window.ereader.getAssetUrl(book.coverAssetId) : null;
-  const isTxtCover = !assetUrl && book.format === "txt";
+  const isTextCover = !assetUrl && (book.format === "txt" || book.format === "mobi");
 
   return (
     <div
-      className={`book-cover ${book.contentType} ${assetUrl ? "asset-cover" : "generated-cover"}${isTxtCover ? " txt-cover" : ""}`}
+      className={`book-cover ${book.contentType} ${assetUrl ? "asset-cover" : "generated-cover"}${isTextCover ? " txt-cover" : ""}`}
     >
       {assetUrl ? (
         <img src={assetUrl} alt={`${book.title} 封面`} loading="lazy" />
       ) : (
         <div className="generated-cover-content">
-          {isTxtCover ? (
+          {isTextCover ? (
             <>
               <strong>{book.title}</strong>
               <p>{book.coverExcerpt || "本地文本阅读"}</p>

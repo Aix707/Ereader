@@ -16,6 +16,7 @@ const {
   ZipReader
 } = require("@zip.js/zip.js");
 const { createCanvas } = require("@napi-rs/canvas");
+const { readMobiFile } = require("./mobi.cjs");
 
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".avif", ".tif", ".tiff"]);
 const PDF_MAX_LONG_EDGE = 2800;
@@ -117,6 +118,13 @@ function getAttr(node, names) {
     if (value) return value;
   }
   return null;
+}
+
+function sanitizeReadingHtml(value) {
+  return sanitizeHtml(value, {
+    allowedTags: ["p", "div", "strong", "em", "b", "i", "span", "br", "ruby", "rt", "h1", "h2", "h3", "h4", "h5", "h6"],
+    allowedAttributes: {}
+  });
 }
 
 async function readZipEntries(filePath) {
@@ -328,10 +336,7 @@ async function processEpubNovel(repo, book, renditionId, zip, opfPath, spine, no
       }
       const text = cleanText(node.textContent);
       if (!text) continue;
-      const safeHtml = sanitizeHtml(node.toString(), {
-        allowedTags: ["p", "strong", "em", "b", "i", "span", "br", "ruby", "rt", "h1", "h2", "h3", "h4", "h5", "h6"],
-        allowedAttributes: {}
-      });
+      const safeHtml = sanitizeReadingHtml(node.toString());
       pending.push({
         unit: {
           index: unitIndex++,
@@ -354,6 +359,152 @@ async function processEpubNovel(repo, book, renditionId, zip, opfPath, spine, no
     notify((spineIndex + 1) / Math.max(1, spine.length));
   }
   if (unitIndex === 0) throw new Error("No readable text or image units found in EPUB spine");
+}
+
+async function processMobi(repo, book, renditionId, notify, assertActive) {
+  if (book.content_type === "comic") {
+    await processMobiComic(repo, book, renditionId, notify, assertActive);
+  } else {
+    await processMobiNovel(repo, book, renditionId, notify, assertActive);
+  }
+}
+
+async function processMobiComic(repo, book, renditionId, notify, assertActive) {
+  const mobi = readMobiFile(book.source_path);
+  const root = parse(mobi.html || "");
+  const body = root.querySelector("body") || root;
+  const imageNodes = body.querySelectorAll("img,image");
+  const orderedImages = [];
+  const used = new Set();
+
+  for (const node of imageNodes) {
+    const image = mobiImageForNode(mobi.images, node);
+    if (!image || used.has(image.key)) continue;
+    used.add(image.key);
+    orderedImages.push(image);
+  }
+  if (orderedImages.length === 0) {
+    for (const [key, image] of mobi.images.entries()) {
+      orderedImages.push({ ...image, key, recindex: key });
+    }
+  }
+  if (orderedImages.length === 0) throw new Error("No image pages found in MOBI file");
+
+  for (let index = 0; index < orderedImages.length; index += 1) {
+    assertActive();
+    const image = orderedImages[index];
+    const asset = await normalizeImage(image.data, image.sourceRef);
+    repo.writeTransaction(() => {
+      const assetId = repo.insertAsset(book.id, asset);
+      repo.insertUnit(book.id, renditionId, {
+        index,
+        type: "page",
+        assetId,
+        title: `Page ${index + 1}`,
+        metadata: { sourceType: "mobi", recindex: image.recindex }
+      });
+    });
+    notify((index + 1) / orderedImages.length);
+    await waitImmediate();
+  }
+}
+
+async function processMobiNovel(repo, book, renditionId, notify, assertActive) {
+  const mobi = readMobiFile(book.source_path);
+  const root = parse(mobi.html || "");
+  const body = root.querySelector("body") || root;
+  let nodes = body.querySelectorAll("h1,h2,h3,h4,h5,h6,p,li,blockquote,img,image");
+  if (nodes.length < 3) {
+    const leafDivs = body
+      .querySelectorAll("div")
+      .filter((node) => node.querySelectorAll("h1,h2,h3,h4,h5,h6,p,li,blockquote,img,image,div").length === 0);
+    nodes = [...nodes, ...leafDivs];
+  }
+
+  let unitIndex = 0;
+  const pending = [];
+  for (const node of nodes) {
+    assertActive();
+    const tagName = String(node.tagName || "").toLowerCase();
+    if (tagName === "img" || tagName === "image") {
+      const image = mobiImageForNode(mobi.images, node);
+      if (!image) continue;
+      const asset = await normalizeImage(image.data, image.sourceRef);
+      pending.push({
+        asset,
+        unit: {
+          index: unitIndex++,
+          type: "image",
+          title: node.getAttribute?.("alt") || null,
+          metadata: { sourceType: "mobi", recindex: image.recindex }
+        }
+      });
+      continue;
+    }
+
+    const text = cleanText(node.textContent);
+    if (!text) continue;
+    pending.push({
+      unit: {
+        index: unitIndex++,
+        type: /^h[1-6]$/.test(tagName) || chapterPattern(text) ? "heading" : "paragraph",
+        title: /^h[1-6]$/.test(tagName) || chapterPattern(text) ? text : null,
+        text,
+        html: sanitizeReadingHtml(node.toString()),
+        metadata: { sourceType: "mobi", tagName, encoding: mobi.encoding }
+      }
+    });
+  }
+
+  if (unitIndex === 0) {
+    const paragraphs = cleanText(root.textContent || mobi.html)
+      .split(/\n{2,}|(?<=。)\s+(?=\S)/)
+      .map((paragraph) => paragraph.trim())
+      .filter(Boolean);
+    for (const paragraph of paragraphs) {
+      pending.push({
+        unit: {
+          index: unitIndex++,
+          type: chapterPattern(paragraph) ? "heading" : "paragraph",
+          title: chapterPattern(paragraph) ? paragraph : null,
+          text: paragraph,
+          metadata: { sourceType: "mobi", encoding: mobi.encoding }
+        }
+      });
+    }
+  }
+
+  if (unitIndex === 0) throw new Error("No readable text found in MOBI file");
+  const batchSize = 300;
+  for (let start = 0; start < pending.length; start += batchSize) {
+    assertActive();
+    const batch = pending.slice(start, start + batchSize);
+    repo.writeTransaction(() => {
+      for (const item of batch) {
+        const assetId = item.asset ? repo.insertAsset(book.id, item.asset) : null;
+        repo.insertUnit(book.id, renditionId, assetId ? { ...item.unit, assetId } : item.unit);
+      }
+    });
+    notify(0.05 + ((start + batch.length) / Math.max(1, pending.length)) * 0.9);
+    await waitImmediate();
+  }
+}
+
+function mobiImageForNode(images, node) {
+  const candidates = [];
+  const recindex = getAttr(node, ["recindex", "data-recindex"]);
+  if (recindex) candidates.push(Number.parseInt(recindex, 10));
+  const src = getAttr(node, ["src", "href", "xlink:href"]) || "";
+  const embed = String(src).match(/kindle:embed:([0-9a-f]+)/i);
+  if (embed) {
+    candidates.push(Number.parseInt(embed[1], 16), Number.parseInt(embed[1], 10));
+  }
+  for (const candidate of candidates) {
+    if (!Number.isFinite(candidate)) continue;
+    if (images.has(candidate)) return { ...images.get(candidate), key: candidate, recindex: candidate };
+    if (images.has(candidate - 1)) return { ...images.get(candidate - 1), key: candidate - 1, recindex: candidate };
+  }
+  return null;
 }
 
 async function processEpub(repo, book, renditionId, notify, assertActive) {
@@ -388,7 +539,7 @@ function createImporter(repo, options = {}) {
     if (!book) return;
     const stats = repo.sourceStats(book.source_path, book.source_kind);
     if (!stats.exists) throw new Error("Source file is missing");
-    const renditionKind = book.source_format === "txt" || (book.source_format === "epub" && book.content_type !== "comic")
+    const renditionKind = book.source_format === "txt" || (book.source_format === "mobi" && book.content_type !== "comic") || (book.source_format === "epub" && book.content_type !== "comic")
       ? "text-flow"
       : "page-flow";
     const assertActive = () => {
@@ -407,6 +558,7 @@ function createImporter(repo, options = {}) {
     };
     notify(0.01);
     if (book.source_format === "txt") await processTxt(repo, book, renditionId, notify, assertActive);
+    else if (book.source_format === "mobi") await processMobi(repo, book, renditionId, notify, assertActive);
     else if (book.source_format === "image-folder") await processImageFolder(repo, book, renditionId, notify, assertActive);
     else if (book.source_format === "pdf") await processPdf(repo, book, renditionId, notify, assertActive);
     else if (book.source_format === "epub") await processEpub(repo, book, renditionId, notify, assertActive);

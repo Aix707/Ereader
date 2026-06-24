@@ -1,4 +1,4 @@
-export type BookFormat = "txt" | "pdf" | "epub" | "image-folder";
+export type BookFormat = "txt" | "pdf" | "epub" | "mobi" | "image-folder";
 export type ContentType = "novel" | "comic";
 export type PageSpread = "single" | "double";
 export type ReadingDirection = "ltr" | "rtl";

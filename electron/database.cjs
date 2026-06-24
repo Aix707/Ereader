@@ -404,7 +404,7 @@ function createRepository(userDataPath) {
     const prefs = publicPrefs(statements.prefsById.get(row.id) || {}, row.content_type);
     const progress = normalizeProgress(statements.progressById.get(row.id) || {});
     const cover = statements.coverById.get(row.id);
-    const coverExcerpt = row.source_format === "txt" && !cover ? textCoverExcerpt(row.id) : null;
+    const coverExcerpt = ["txt", "mobi"].includes(row.source_format) && !cover ? textCoverExcerpt(row.id) : null;
     const stats = sourceStats(row.source_path, row.source_kind);
     const stale =
       row.import_status === "ready" &&
@@ -879,7 +879,7 @@ function createRepository(userDataPath) {
       : 0;
     const progressBands = buildProgressBands(books);
     const contentTypes = countBookGroups(books, "contentType", ["novel", "comic"]);
-    const formats = countBookGroups(books, "format", ["txt", "epub", "pdf", "image-folder"]);
+    const formats = countBookGroups(books, "format", ["txt", "epub", "mobi", "pdf", "image-folder"]);
     const activity = buildActivitySummary(books);
     const recentBooks = books
       .filter((book) => book.lastOpenedAt || clamp01(book.progress?.percent) > 0)

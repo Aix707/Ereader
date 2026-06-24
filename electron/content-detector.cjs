@@ -8,6 +8,7 @@ const {
   Uint8ArrayReader,
   ZipReader
 } = require("@zip.js/zip.js");
+const { readMobiFile } = require("./mobi.cjs");
 
 const EPUB_SAMPLE_MAX = 8;
 const PDF_SAMPLE_MAX = 5;
@@ -18,10 +19,44 @@ async function detectContentType(absPath, kind, format) {
   try {
     if (format === "epub") return await detectEpubContentType(absPath);
     if (format === "pdf") return await detectPdfContentType(absPath);
+    if (format === "mobi") return detectMobiContentType(absPath);
   } catch {
     return "novel";
   }
   return "novel";
+}
+
+function detectMobiContentType(filePath) {
+  const mobi = readMobiFile(filePath);
+  if (mobi.images.size === 0) return "novel";
+
+  const root = parse(mobi.html || "");
+  const body = root.querySelector("body") || root;
+  const imageNodes = body.querySelectorAll("img,image");
+  const textNodes = body.querySelectorAll("h1,h2,h3,h4,h5,h6,p,li,blockquote");
+  const textChars = cleanText(body.textContent).length;
+  const paragraphLikeNodes = textNodes
+    .map((node) => cleanText(node.textContent))
+    .filter((text) => text.length >= 20).length;
+  const referencedImages = imageNodes.filter((node) => mobiImageNodeHasImage(mobi.images, node)).length;
+  const imageCount = Math.max(referencedImages, mobi.images.size);
+
+  if (textChars >= 1200 || paragraphLikeNodes >= 10) return "novel";
+  if (imageCount >= 3 && textChars < 800) return "comic";
+  if (imageCount >= 8 && textChars < imageCount * 120) return "comic";
+  return "novel";
+}
+
+function mobiImageNodeHasImage(images, node) {
+  const candidates = [];
+  const recindex = getAttr(node, ["recindex", "data-recindex"]);
+  if (recindex) candidates.push(Number.parseInt(recindex, 10));
+  const src = getAttr(node, ["src", "href", "xlink:href"]) || "";
+  const embed = String(src).match(/kindle:embed:([0-9a-f]+)/i);
+  if (embed) {
+    candidates.push(Number.parseInt(embed[1], 16), Number.parseInt(embed[1], 10));
+  }
+  return candidates.some((candidate) => Number.isFinite(candidate) && (images.has(candidate) || images.has(candidate - 1)));
 }
 
 async function detectPdfContentType(filePath) {
@@ -204,6 +239,14 @@ function normalizeZipPath(value) {
 function resolveZipHref(baseFile, href) {
   const cleanHref = decodeURIComponent(String(href || "").split("#")[0]).replace(/\\/g, "/");
   return path.posix.normalize(path.posix.join(path.posix.dirname(baseFile), cleanHref));
+}
+
+function getAttr(node, names) {
+  for (const name of names) {
+    const value = node.getAttribute?.(name);
+    if (value) return value;
+  }
+  return null;
 }
 
 module.exports = {

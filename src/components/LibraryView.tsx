@@ -248,7 +248,7 @@ export function LibraryView({
           <div className="empty-state">
             <FileArchive size={34} />
             <h3>{query ? "没有匹配的书籍" : "还没有可阅读内容"}</h3>
-            <p>{query ? "换一个关键词，或清除搜索查看全部书籍。" : "导入 txt、pdf、epub，或选择一个漫画图片文件夹开始。"}</p>
+            <p>{query ? "换一个关键词，或清除搜索查看全部书籍。" : "导入 txt、pdf、epub、mobi，或选择一个漫画图片文件夹开始。"}</p>
             <div className="empty-actions">
               {query ? (
                 <button className="secondary-action" onClick={() => setQuery("")}>
@@ -289,7 +289,7 @@ export function LibraryView({
           <div className="drag-import-overlay">
             <Import size={28} />
             <strong>释放以导入</strong>
-            <span>支持 txt、pdf、epub 和图片文件夹</span>
+            <span>支持 txt、pdf、epub、mobi 和图片文件夹</span>
           </div>
         )}
       </section>

@@ -160,7 +160,7 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
     revealChrome();
   }, [clearChromeHideTimer, isFullScreen, revealChrome]);
 
-  const canBeComic = book.format === "pdf" || book.format === "epub" || book.format === "image-folder";
+  const canBeComic = book.format === "pdf" || book.format === "epub" || book.format === "mobi" || book.format === "image-folder";
   const isComic = book.contentType === "comic";
   const isReady = book.importStatus === "ready" || !book.importStatus;
   const usePageReader = book.contentType === "comic" || book.format === "pdf" || book.format === "image-folder";

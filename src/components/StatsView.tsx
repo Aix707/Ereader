@@ -204,7 +204,7 @@ function RecentBookCover({ book }: { book: StatsSummary["recentBooks"][number] }
     );
   }
   return (
-    <div className={`recent-book-cover generated ${book.format === "txt" ? "txt" : ""}`}>
+    <div className={`recent-book-cover generated ${book.format === "txt" || book.format === "mobi" ? "txt" : ""}`}>
       <strong>{Array.from(book.title).slice(0, 2).join("")}</strong>
     </div>
   );
