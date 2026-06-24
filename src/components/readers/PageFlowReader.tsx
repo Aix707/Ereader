@@ -272,7 +272,7 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
           onSelect={goToIndex}
         />
       )}
-      <div className="comic-reader" onWheel={handleWheel} title="滚轮上下翻页，方向键左右翻页">
+      <div className="comic-reader" onWheel={handleWheel}>
         <button className="page-turn left" onClick={goPrevious} disabled={currentIndex <= 0}>
           <ChevronLeft size={22} />
         </button>

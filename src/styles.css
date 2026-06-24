@@ -1509,6 +1509,7 @@ select,
 }
 
 .reader-shell.fullscreen .reader-stage {
+  grid-row: 1 / -1;
   height: 100vh;
 }
 
@@ -1586,11 +1587,6 @@ select,
 
 .page-reader-layout {
   grid-template-columns: 128px minmax(0, 1fr);
-}
-
-.reader-shell.fullscreen:not(.chrome-hidden) .text-reader-layout:not(.toc-hidden),
-.reader-shell.fullscreen:not(.chrome-hidden) .page-reader-layout:not(.thumbnails-hidden) {
-  padding-top: calc(var(--topbar-height) + var(--gap-md));
 }
 
 .text-reader-layout.toc-hidden,
@@ -1856,9 +1852,7 @@ select,
   height: 100%;
   place-items: center;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(240, 246, 253, 0.56), rgba(226, 237, 249, 0.78)),
-    #edf4fb;
+  background: transparent;
 }
 
 .comic-pages {

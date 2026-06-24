@@ -1,27 +1,40 @@
 import { Fullscreen, Minus, Shrink, Square, SquareStack, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+type WindowState = {
+  isMaximized: boolean;
+  isFullScreen: boolean;
+};
+
 export function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  const applyState = useCallback((state: WindowState) => {
+    setIsMaximized(state.isMaximized);
+    setIsFullScreen(state.isFullScreen);
+  }, []);
+
+  const toggleMaximize = useCallback(() => {
+    window.ereader.windowControls
+      .toggleMaximize()
+      .then(applyState)
+      .catch(() => undefined);
+  }, [applyState]);
+
   const toggleFullScreen = useCallback(() => {
     window.ereader.windowControls
       .toggleFullScreen()
-      .then((state) => setIsFullScreen(state.isFullScreen))
+      .then(applyState)
       .catch(() => undefined);
-  }, []);
+  }, [applyState]);
 
   useEffect(() => {
     let cleanup: () => void = () => undefined;
-    const applyState = (state: { isMaximized: boolean; isFullScreen: boolean }) => {
-      setIsMaximized(state.isMaximized);
-      setIsFullScreen(state.isFullScreen);
-    };
     window.ereader.windowControls.getState().then(applyState).catch(() => undefined);
     cleanup = window.ereader.windowControls.onStateChanged(applyState);
     return cleanup;
-  }, []);
+  }, [applyState]);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -46,7 +59,7 @@ export function WindowControls() {
       </button>
       <button
         type="button"
-        onClick={() => window.ereader.windowControls.toggleMaximize().then((state) => setIsMaximized(state.isMaximized))}
+        onClick={toggleMaximize}
         title={isMaximized ? "还原窗口" : "最大化窗口"}
       >
         {isMaximized ? <SquareStack size={14} /> : <Square size={14} />}

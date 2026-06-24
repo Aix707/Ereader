@@ -9,7 +9,7 @@ import {
   PanelLeftClose,
   RectangleHorizontal
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTitlebarDoubleClick } from "../lib/ui";
 import { PageFlowReader } from "./readers/PageFlowReader";
 import { TextFlowReader } from "./readers/TextFlowReader";
@@ -37,6 +37,10 @@ interface ReaderViewProps {
   appSettings: AppSettings;
   onUpdateAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
 }
+
+const CHROME_REVEAL_TOP_ZONE = 92;
+const CHROME_REVEAL_BOTTOM_ZONE = 84;
+const CHROME_REVEAL_SIDE_ZONE = 96;
 
 export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAppSettings }: ReaderViewProps) {
   const [progressPercent, setProgressPercent] = useState(book.progress.percent || 0);
@@ -102,6 +106,21 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
     setChromeVisible(true);
     scheduleChromeHide();
   }, [isFullScreen, scheduleChromeHide]);
+
+  const handleShellMouseMove = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      if (!isFullScreen) return;
+      const nearChromeEdge =
+        event.clientY <= CHROME_REVEAL_TOP_ZONE ||
+        window.innerHeight - event.clientY <= CHROME_REVEAL_BOTTOM_ZONE ||
+        event.clientX <= CHROME_REVEAL_SIDE_ZONE ||
+        window.innerWidth - event.clientX <= CHROME_REVEAL_SIDE_ZONE;
+      if (nearChromeEdge) {
+        revealChrome();
+      }
+    },
+    [isFullScreen, revealChrome]
+  );
 
   const updatePreference = useCallback(
     (preferences: Partial<ReaderPreferences>) => {
@@ -173,14 +192,12 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
     <main
       className={`reader-shell${isFullScreen ? " fullscreen" : ""}${isFullScreen && !chromeVisible ? " chrome-hidden" : ""}`}
       style={shellStyle}
-      onMouseMove={revealChrome}
+      onMouseMove={handleShellMouseMove}
       onFocusCapture={revealChrome}
     >
       <header
         className="reader-toolbar"
         onDoubleClick={handleToolbarDoubleClick}
-        onMouseEnter={clearChromeHideTimer}
-        onMouseLeave={scheduleChromeHide}
       >
         <div className="reader-left-tools">
           <div className="topbar-title-island reader-title" title={`${book.title} · ${labelForFormat(book.format)} · ${labelForContentType(book.contentType)}`}>

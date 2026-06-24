@@ -29,7 +29,12 @@ export function useTitlebarDoubleClick(ignoreSelector: string) {
     (event: MouseEvent<HTMLElement>) => {
       const target = event.target as HTMLElement;
       if (target.closest(ignoreSelector)) return;
-      window.ereader.windowControls.toggleMaximize().catch(() => undefined);
+      window.ereader.windowControls
+        .getState()
+        .then((state) => state.isFullScreen
+          ? window.ereader.windowControls.toggleFullScreen()
+          : window.ereader.windowControls.toggleMaximize())
+        .catch(() => undefined);
     },
     [ignoreSelector]
   );

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, protocol, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, protocol, screen, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -30,6 +30,13 @@ const FALLBACK_FONTS = ["serif", "system-ui", "SimSun", "Microsoft YaHei", "KaiT
 const BACKGROUND_MAX_EDGE = 2400;
 const BACKGROUND_FILE = "home-background.webp";
 let fontCache = null;
+const windowChromeState = {
+  isMaximized: false,
+  isFullScreen: false,
+  normalBounds: null,
+  fullScreenRestoreBounds: null,
+  fullScreenRestoreMaximized: false
+};
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -73,8 +80,11 @@ function createWindow() {
 
   mainWindow.on("maximize", sendWindowState);
   mainWindow.on("unmaximize", sendWindowState);
+  mainWindow.on("restore", sendWindowState);
   mainWindow.on("enter-full-screen", sendWindowState);
   mainWindow.on("leave-full-screen", sendWindowState);
+  mainWindow.on("move", rememberNormalBounds);
+  mainWindow.on("resize", rememberNormalBounds);
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
@@ -84,16 +94,75 @@ function createWindow() {
   }
 }
 
-function sendWindowState() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("window:stateChanged", windowState());
+function normalizeWindowStateOverrides(overrides) {
+  const normalized = {};
+  if (overrides && typeof overrides === "object") {
+    if (typeof overrides.isMaximized === "boolean") normalized.isMaximized = overrides.isMaximized;
+    if (typeof overrides.isFullScreen === "boolean") normalized.isFullScreen = overrides.isFullScreen;
+  }
+  return normalized;
 }
 
-function windowState() {
+function sendWindowState(overrides = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("window:stateChanged", windowState(overrides));
+}
+
+function windowState(overrides = {}) {
   return {
-    isMaximized: Boolean(mainWindow?.isMaximized()),
-    isFullScreen: Boolean(mainWindow?.isFullScreen())
+    isMaximized: windowChromeState.isMaximized,
+    isFullScreen: windowChromeState.isFullScreen,
+    ...normalizeWindowStateOverrides(overrides)
   };
+}
+
+function sendWindowStateSoon(overrides = {}) {
+  sendWindowState(overrides);
+  setTimeout(() => sendWindowState(overrides), 120);
+  setTimeout(sendWindowState, 700);
+}
+
+function cloneBounds(bounds) {
+  return {
+    x: Math.round(bounds.x),
+    y: Math.round(bounds.y),
+    width: Math.round(bounds.width),
+    height: Math.round(bounds.height)
+  };
+}
+
+function rememberNormalBounds() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!windowChromeState.isMaximized && !windowChromeState.isFullScreen) {
+    windowChromeState.normalBounds = cloneBounds(mainWindow.getBounds());
+  }
+}
+
+function displayForWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return screen.getPrimaryDisplay();
+  return screen.getDisplayMatching(mainWindow.getBounds());
+}
+
+function normalRestoreBounds() {
+  return windowChromeState.normalBounds || {
+    x: 80,
+    y: 60,
+    width: 1320,
+    height: 860
+  };
+}
+
+function applyWindowBounds(bounds) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setBounds(cloneBounds(bounds), true);
+}
+
+function applyMaximizedBounds() {
+  applyWindowBounds(displayForWindow().workArea);
+}
+
+function applyFullScreenBounds() {
+  applyWindowBounds(displayForWindow().bounds);
 }
 
 function listSystemFonts() {
@@ -495,21 +564,64 @@ ipcMain.handle("window:minimize", () => {
 });
 
 ipcMain.handle("window:toggleMaximize", () => {
-  if (!mainWindow) return { isMaximized: false };
-  if (mainWindow.isMaximized()) {
-    mainWindow.unmaximize();
-  } else {
-    mainWindow.maximize();
+  if (!mainWindow) return { isMaximized: false, isFullScreen: false };
+
+  if (windowChromeState.isFullScreen) {
+    mainWindow.setFullScreen(false);
+    windowChromeState.isFullScreen = false;
+    if (windowChromeState.fullScreenRestoreMaximized) {
+      windowChromeState.isMaximized = true;
+      applyMaximizedBounds();
+    } else {
+      windowChromeState.isMaximized = false;
+      applyWindowBounds(windowChromeState.fullScreenRestoreBounds || normalRestoreBounds());
+    }
+    const state = windowState();
+    sendWindowStateSoon(state);
+    return state;
   }
-  return { isMaximized: mainWindow.isMaximized() };
+
+  const shouldMaximize = !windowChromeState.isMaximized;
+  if (shouldMaximize) {
+    rememberNormalBounds();
+    windowChromeState.isMaximized = true;
+    applyMaximizedBounds();
+  } else {
+    windowChromeState.isMaximized = false;
+    mainWindow.restore();
+    applyWindowBounds(normalRestoreBounds());
+  }
+  const state = windowState();
+  sendWindowStateSoon(state);
+  return state;
 });
 
 ipcMain.handle("window:toggleFullScreen", () => {
-  if (!mainWindow) return { isFullScreen: false };
-  const isFullScreen = !mainWindow.isFullScreen();
-  mainWindow.setFullScreen(isFullScreen);
-  sendWindowState();
-  return { isFullScreen };
+  if (!mainWindow) return { isMaximized: false, isFullScreen: false };
+  const shouldFullScreen = !windowChromeState.isFullScreen;
+
+  if (shouldFullScreen) {
+    windowChromeState.fullScreenRestoreBounds = cloneBounds(mainWindow.getBounds());
+    windowChromeState.fullScreenRestoreMaximized = windowChromeState.isMaximized;
+    windowChromeState.isFullScreen = true;
+    windowChromeState.isMaximized = false;
+    mainWindow.setFullScreen(true);
+    applyFullScreenBounds();
+  } else {
+    mainWindow.setFullScreen(false);
+    windowChromeState.isFullScreen = false;
+    if (windowChromeState.fullScreenRestoreMaximized) {
+      windowChromeState.isMaximized = true;
+      applyMaximizedBounds();
+    } else {
+      windowChromeState.isMaximized = false;
+      applyWindowBounds(windowChromeState.fullScreenRestoreBounds || normalRestoreBounds());
+    }
+  }
+
+  const state = windowState();
+  sendWindowStateSoon(state);
+  return state;
 });
 
 ipcMain.handle("window:close", () => {
