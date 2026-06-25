@@ -7,9 +7,9 @@ const DEFAULT_PREFS = {
   fontSize: 18,
   lineHeight: 1.8,
   pageSpread: "single",
-  readingDirection: "rtl",
-  fitMode: "contain"
+  readingDirection: "rtl"
 };
+const LEGACY_FIT_MODE = "contain";
 const DEFAULT_COMIC_PREFS = {
   ...DEFAULT_PREFS,
   pageSpread: "double"
@@ -180,9 +180,12 @@ function normalizePrefs(preferences = {}, defaults = DEFAULT_PREFS) {
     fontSize: preferences.fontSize ?? preferences.font_size ?? defaults.fontSize,
     lineHeight: preferences.lineHeight ?? preferences.line_height ?? defaults.lineHeight,
     pageSpread: preferences.pageSpread ?? preferences.page_spread ?? defaults.pageSpread,
-    readingDirection: preferences.readingDirection ?? preferences.reading_direction ?? defaults.readingDirection,
-    fitMode: preferences.fitMode ?? preferences.fit_mode ?? defaults.fitMode
+    readingDirection: preferences.readingDirection ?? preferences.reading_direction ?? defaults.readingDirection
   };
+}
+
+function legacyFitMode(preferences = {}) {
+  return preferences.fitMode ?? preferences.fit_mode ?? LEGACY_FIT_MODE;
 }
 
 function publicPrefs(preferences = {}, contentType = "novel") {
@@ -554,7 +557,8 @@ function createRepository(userDataPath) {
     });
     upsertPreferences(
       source.id,
-      normalizePrefs(existing ? statements.prefsById.get(source.id) : source.preferences, defaultPrefsForContentType(contentType))
+      existing ? statements.prefsById.get(source.id) : source.preferences,
+      defaultPrefsForContentType(contentType)
     );
     upsertProgress(source.id, normalizeProgress(existing ? statements.progressById.get(source.id) : source.progress));
     return getBook(source.id);
@@ -571,7 +575,7 @@ function createRepository(userDataPath) {
         page_spread = excluded.page_spread,
         reading_direction = excluded.reading_direction,
         fit_mode = excluded.fit_mode`
-    ).run(bookId, prefs.fontSize, prefs.lineHeight, prefs.pageSpread, prefs.readingDirection, prefs.fitMode);
+    ).run(bookId, prefs.fontSize, prefs.lineHeight, prefs.pageSpread, prefs.readingDirection, legacyFitMode(preferences));
   }
 
   function upsertProgress(bookId, progress) {

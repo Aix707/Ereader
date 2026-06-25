@@ -1,14 +1,14 @@
 const fs = require("node:fs");
-const path = require("node:path");
 const { XMLParser } = require("fast-xml-parser");
 const { parse } = require("node-html-parser");
 const {
-  BlobReader,
-  TextWriter,
-  Uint8ArrayReader,
-  ZipReader
-} = require("@zip.js/zip.js");
-const { readMobiFile } = require("./mobi.cjs");
+  arrayify,
+  cleanText,
+  normalizeZipPath,
+  readZipEntries,
+  resolveZipHref
+} = require("./content-utils.cjs");
+const { mobiImageForNode, readMobiFile } = require("./mobi.cjs");
 
 const EPUB_SAMPLE_MAX = 8;
 const PDF_SAMPLE_MAX = 5;
@@ -38,25 +38,13 @@ function detectMobiContentType(filePath) {
   const paragraphLikeNodes = textNodes
     .map((node) => cleanText(node.textContent))
     .filter((text) => text.length >= 20).length;
-  const referencedImages = imageNodes.filter((node) => mobiImageNodeHasImage(mobi.images, node)).length;
+  const referencedImages = imageNodes.filter((node) => mobiImageForNode(mobi.images, node)).length;
   const imageCount = Math.max(referencedImages, mobi.images.size);
 
   if (textChars >= 1200 || paragraphLikeNodes >= 10) return "novel";
   if (imageCount >= 3 && textChars < 800) return "comic";
   if (imageCount >= 8 && textChars < imageCount * 120) return "comic";
   return "novel";
-}
-
-function mobiImageNodeHasImage(images, node) {
-  const candidates = [];
-  const recindex = getAttr(node, ["recindex", "data-recindex"]);
-  if (recindex) candidates.push(Number.parseInt(recindex, 10));
-  const src = getAttr(node, ["src", "href", "xlink:href"]) || "";
-  const embed = String(src).match(/kindle:embed:([0-9a-f]+)/i);
-  if (embed) {
-    candidates.push(Number.parseInt(embed[1], 16), Number.parseInt(embed[1], 10));
-  }
-  return candidates.some((candidate) => Number.isFinite(candidate) && (images.has(candidate) || images.has(candidate - 1)));
 }
 
 async function detectPdfContentType(filePath) {
@@ -205,48 +193,6 @@ function middleSampleIndexes(total, maxCount) {
     indexes.add(Math.round(start + (sample * (available - 1)) / (count - 1)));
   }
   return [...indexes].sort((left, right) => left - right);
-}
-
-async function readZipEntries(filePath) {
-  const sourceReader =
-    typeof fs.openAsBlob === "function"
-      ? new BlobReader(await fs.openAsBlob(filePath))
-      : new Uint8ArrayReader(new Uint8Array(fs.readFileSync(filePath)));
-  const reader = new ZipReader(sourceReader);
-  const entries = await reader.getEntries();
-  const map = new Map(entries.map((entry) => [normalizeZipPath(entry.filename), entry]));
-  async function text(name) {
-    const entry = map.get(normalizeZipPath(name));
-    if (!entry) throw new Error(`Missing EPUB entry: ${name}`);
-    return entry.getData(new TextWriter());
-  }
-  return { reader, text };
-}
-
-function arrayify(value) {
-  if (!value) return [];
-  return Array.isArray(value) ? value : [value];
-}
-
-function cleanText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function normalizeZipPath(value) {
-  return String(value || "").replace(/\\/g, "/").replace(/^\/+/, "");
-}
-
-function resolveZipHref(baseFile, href) {
-  const cleanHref = decodeURIComponent(String(href || "").split("#")[0]).replace(/\\/g, "/");
-  return path.posix.normalize(path.posix.join(path.posix.dirname(baseFile), cleanHref));
-}
-
-function getAttr(node, names) {
-  for (const name of names) {
-    const value = node.getAttribute?.(name);
-    if (value) return value;
-  }
-  return null;
 }
 
 module.exports = {

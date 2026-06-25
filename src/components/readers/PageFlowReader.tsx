@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, WheelEvent } from "react";
 import type { BookItem, PageUnit, ReadingProgress } from "../../types";
 
@@ -19,6 +20,15 @@ const WHEEL_PAGE_THRESHOLD = 48;
 const WHEEL_COOLDOWN_MS = 180;
 const THUMBNAIL_ITEM_HEIGHT = 112;
 const THUMBNAIL_OVERSCAN_ITEMS = 8;
+const COMIC_SIDE_GUTTER = 48;
+const COMIC_VERTICAL_GUTTER = 12;
+const THUMBNAIL_PANEL_LEFT = 12;
+const THUMBNAIL_PANEL_WIDTH = 128;
+const THUMBNAIL_SAFE_GAP = 12;
+const THUMBNAIL_RESERVE = THUMBNAIL_PANEL_LEFT + THUMBNAIL_PANEL_WIDTH + THUMBNAIL_SAFE_GAP;
+const PAGE_TURN_LEFT_OFFSET = 18;
+const PAGE_TURN_WIDTH = 42;
+const CONTENT_SAFE_LEFT_WITH_THUMBNAILS = THUMBNAIL_RESERVE + PAGE_TURN_LEFT_OFFSET + PAGE_TURN_WIDTH + THUMBNAIL_SAFE_GAP;
 
 interface DecodeCacheEntry {
   image: HTMLImageElement;
@@ -35,14 +45,14 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
   const [isJumping, setIsJumping] = useState(false);
   const [jumpValue, setJumpValue] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const pagesRef = useRef<HTMLDivElement | null>(null);
+  const readerRef = useRef<HTMLDivElement | null>(null);
   const jumpInputRef = useRef<HTMLInputElement | null>(null);
   const wheelDeltaRef = useRef(0);
   const lastWheelDirectionRef = useRef(0);
   const lastWheelAtRef = useRef(0);
   const decodeCacheRef = useRef<Map<number, DecodeCacheEntry>>(new Map());
   const didRestoreProgressRef = useRef(false);
-  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const [readerSize, setReaderSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     setError(null);
@@ -185,14 +195,14 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
   }, [pages.length, preloadAroundIndex, spreadSize]);
 
   useEffect(() => {
-    const element = pagesRef.current;
+    const element = readerRef.current;
     if (!element) return;
 
     let animationFrame = 0;
     const measure = () => {
       window.cancelAnimationFrame(animationFrame);
       animationFrame = window.requestAnimationFrame(() => {
-        setStageSize({
+        setReaderSize({
           width: element.clientWidth,
           height: element.clientHeight
         });
@@ -211,13 +221,41 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
     };
   }, [pages.length]);
 
+  const fullPageBounds = useMemo(() => {
+    const columns = visiblePages.length > 1 ? 2 : 1;
+    return {
+      width: Math.max(0, (readerSize.width - COMIC_SIDE_GUTTER * 2 - PAGE_GAP * (columns - 1)) / columns),
+      height: Math.max(0, readerSize.height - COMIC_VERTICAL_GUTTER)
+    };
+  }, [readerSize.height, readerSize.width, visiblePages.length]);
+
+  const sidebarReserve = useMemo(() => {
+    if (!showThumbnails || !visiblePages.length || readerSize.width <= 0) return 0;
+    const spreadWidth = spreadDisplayWidth(visiblePages, fullPageBounds, PAGE_GAP);
+    if (spreadWidth <= 0) return 0;
+    const spreadLeftEdge = (readerSize.width - spreadWidth) / 2;
+    return spreadLeftEdge < CONTENT_SAFE_LEFT_WITH_THUMBNAILS ? THUMBNAIL_RESERVE : 0;
+  }, [fullPageBounds, readerSize.width, showThumbnails, visiblePages]);
+
   const pageBounds = useMemo(() => {
     const columns = visiblePages.length > 1 ? 2 : 1;
     return {
-      width: Math.max(0, (stageSize.width - PAGE_GAP * (columns - 1)) / columns),
-      height: stageSize.height
+      width: Math.max(
+        0,
+        (readerSize.width - COMIC_SIDE_GUTTER * 2 - sidebarReserve - PAGE_GAP * (columns - 1)) / columns
+      ),
+      height: Math.max(0, readerSize.height - COMIC_VERTICAL_GUTTER)
     };
-  }, [stageSize.height, stageSize.width, visiblePages.length]);
+  }, [readerSize.height, readerSize.width, sidebarReserve, visiblePages.length]);
+
+  const comicReserveStyle = useMemo(
+    () =>
+      ({
+        "--comic-control-reserve": `${showThumbnails ? THUMBNAIL_RESERVE : 0}px`,
+        "--comic-sidebar-reserve": `${sidebarReserve}px`
+      }) as CSSProperties,
+    [showThumbnails, sidebarReserve]
+  );
 
   useEffect(() => {
     if (!pages.length) return;
@@ -263,7 +301,7 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
   if (!pages.length) return <div className="reader-loading">正在读取页面缓存...</div>;
 
   return (
-    <div className={`page-reader-layout${showThumbnails ? "" : " thumbnails-hidden"}`}>
+    <div className="page-reader-layout">
       {showThumbnails && (
         <ComicThumbnailPanel
           pages={pages}
@@ -272,11 +310,11 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
           onSelect={goToIndex}
         />
       )}
-      <div className="comic-reader" onWheel={handleWheel}>
+      <div ref={readerRef} className="comic-reader" style={comicReserveStyle} onWheel={handleWheel}>
         <button className="page-turn left" onClick={goPrevious} disabled={currentIndex <= 0}>
           <ChevronLeft size={22} />
         </button>
-        <div ref={pagesRef} className={`comic-pages ${visiblePages.length > 1 ? "double-spread" : "single-spread"}`}>
+        <div className={`comic-pages ${visiblePages.length > 1 ? "double-spread" : "single-spread"}`}>
           {visiblePages.map((page) => (
             <PageImage key={page.id} page={page} maxWidth={pageBounds.width} maxHeight={pageBounds.height} />
           ))}
@@ -440,6 +478,14 @@ function getContainedSize(sourceWidth: number, sourceHeight: number, maxWidth: n
     width: Math.max(1, Math.floor(sourceWidth * scale)),
     height: Math.max(1, Math.floor(sourceHeight * scale))
   };
+}
+
+function spreadDisplayWidth(pages: PageUnit[], bounds: { width: number; height: number }, gap: number) {
+  const widths = pages
+    .map((page) => getContainedSize(page.width, page.height, bounds.width, bounds.height)?.width || 0)
+    .filter((width) => width > 0);
+  if (!widths.length) return 0;
+  return widths.reduce((sum, width) => sum + width, 0) + gap * Math.max(0, widths.length - 1);
 }
 
 function pageIndexFromProgress(progress: ReadingProgress) {

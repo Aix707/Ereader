@@ -1575,8 +1575,7 @@ select,
   white-space: nowrap;
 }
 
-.text-reader-layout,
-.page-reader-layout {
+.text-reader-layout {
   position: relative;
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
@@ -1585,17 +1584,19 @@ select,
   padding: var(--gap-md);
 }
 
+.reader-shell.fullscreen .text-reader-layout {
+  padding-top: calc(var(--topbar-height) + var(--gap-md));
+}
+
 .page-reader-layout {
-  grid-template-columns: 128px minmax(0, 1fr);
-}
-
-.text-reader-layout.toc-hidden,
-.page-reader-layout.thumbnails-hidden {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.page-reader-layout.thumbnails-hidden {
+  position: relative;
+  height: 100%;
   padding: 0;
+  overflow: hidden;
+}
+
+.text-reader-layout.toc-hidden {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .toc-panel {
@@ -1654,9 +1655,20 @@ select,
 }
 
 .comic-thumbnail-panel {
+  position: absolute;
+  z-index: 7;
+  top: var(--gap-md);
+  left: var(--gap-md);
+  width: 128px;
+  height: calc(100% - var(--gap-md) - 58px);
   transition:
     opacity 180ms ease,
     transform 180ms ease;
+}
+
+.reader-shell.fullscreen .comic-thumbnail-panel {
+  top: calc(var(--topbar-height) + var(--gap-md));
+  height: calc(100% - var(--topbar-height) - var(--gap-md) - 58px);
 }
 
 .comic-thumbnail-list {
@@ -1846,7 +1858,8 @@ select,
 }
 
 .comic-reader {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: grid;
   width: 100%;
   height: 100%;
@@ -1856,12 +1869,15 @@ select,
 }
 
 .comic-pages {
+  position: absolute;
+  top: 6px;
+  right: 48px;
+  bottom: 6px;
+  left: calc(48px + var(--comic-sidebar-reserve, 0px));
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--gap-md);
-  width: calc(100% - 96px);
-  height: calc(100% - 12px);
   overflow: hidden;
 }
 
@@ -1922,7 +1938,7 @@ select,
 }
 
 .page-turn.left {
-  left: 18px;
+  left: calc(18px + var(--comic-control-reserve, 0px));
 }
 
 .page-turn.right {
@@ -2548,9 +2564,5 @@ select,
 
   .text-reader-layout {
     grid-template-columns: 210px 1fr;
-  }
-
-  .page-reader-layout {
-    grid-template-columns: 118px 1fr;
   }
 }

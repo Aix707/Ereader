@@ -233,8 +233,8 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
               <SegmentedControl
                 value={book.preferences.readingDirection}
                 options={[
-                  { value: "ltr", label: "左到右阅读", icon: <ChevronsRight size={15} /> },
-                  { value: "rtl", label: "右到左阅读", icon: <ChevronsLeft size={15} /> }
+                  { value: "rtl", label: "右到左阅读", icon: <ChevronsLeft size={15} /> },
+                  { value: "ltr", label: "左到右阅读", icon: <ChevronsRight size={15} /> }
                 ]}
                 onChange={(value) => updatePreference({ readingDirection: value as ReadingDirection })}
               />

@@ -167,8 +167,40 @@ function imageMime(buffer) {
   return null;
 }
 
+function mobiImageForNode(images, node) {
+  const candidates = [];
+  const recindex = getMobiNodeAttr(node, ["recindex", "data-recindex"]);
+  if (recindex) addMobiImageCandidates(candidates, Number.parseInt(recindex, 10));
+  const src = getMobiNodeAttr(node, ["src", "href", "xlink:href"]) || "";
+  const embed = String(src).match(/kindle:embed:([0-9a-f]+)/i);
+  if (embed) {
+    addMobiImageCandidates(candidates, Number.parseInt(embed[1], 16));
+    addMobiImageCandidates(candidates, Number.parseInt(embed[1], 10));
+  }
+  for (const candidate of candidates) {
+    if (!Number.isFinite(candidate)) continue;
+    if (images.has(candidate)) return { ...images.get(candidate), key: candidate, recindex: candidate };
+  }
+  return null;
+}
+
+function getMobiNodeAttr(node, names) {
+  for (const name of names) {
+    const value = node.getAttribute?.(name);
+    if (value) return value;
+  }
+  return null;
+}
+
+function addMobiImageCandidates(candidates, value) {
+  if (!Number.isFinite(value)) return;
+  if (value > 0) candidates.push(value - 1);
+  candidates.push(value);
+}
+
 module.exports = {
   decompressPalmDoc,
+  mobiImageForNode,
   parseMobiBuffer,
   readMobiFile
 };
