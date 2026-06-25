@@ -44,6 +44,15 @@ function stripHtml(value) {
   return String(value || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function parseJsonField(value, fallback = null) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
 function clamp01(value) {
   const number = Number(value || 0);
   if (!Number.isFinite(number)) return 0;
@@ -483,11 +492,7 @@ function createRepository(userDataPath) {
   function getAppSettings() {
     const row = statements.settingByKey.get("app");
     if (!row?.valueJson) return normalizeAppSettings(DEFAULT_APP_SETTINGS);
-    try {
-      return normalizeAppSettings(JSON.parse(row.valueJson));
-    } catch {
-      return normalizeAppSettings(DEFAULT_APP_SETTINGS);
-    }
+    return normalizeAppSettings(parseJsonField(row.valueJson, DEFAULT_APP_SETTINGS));
   }
 
   function updateAppSettings(patch = {}) {
@@ -766,7 +771,7 @@ function createRepository(userDataPath) {
       .all(bookId)
       .map((row) => ({
         ...row,
-        metadata: row.metadataJson ? JSON.parse(row.metadataJson) : null
+        metadata: parseJsonField(row.metadataJson)
       }));
   }
 
@@ -784,7 +789,7 @@ function createRepository(userDataPath) {
       .all(bookId)
       .map((row) => ({
         ...row,
-        metadata: row.metadataJson ? JSON.parse(row.metadataJson) : null
+        metadata: parseJsonField(row.metadataJson)
       }));
   }
 
@@ -877,20 +882,25 @@ function createRepository(userDataPath) {
     return top?.key || null;
   }
 
-  function statsSummary() {
-    const library = listBooks();
-    const books = library.books;
+  function buildOverview(books, activity) {
     const totalBooks = books.length;
     const readBooks = books.filter((book) => clamp01(book.progress?.percent) > 0 || book.lastOpenedAt).length;
     const completedBooks = books.filter((book) => clamp01(book.progress?.percent) >= 0.98).length;
     const averageProgress = totalBooks
       ? books.reduce((sum, book) => sum + clamp01(book.progress?.percent), 0) / totalBooks
       : 0;
-    const progressBands = buildProgressBands(books);
-    const contentTypes = countBookGroups(books, "contentType", ["novel", "comic"]);
-    const formats = countBookGroups(books, "format", ["txt", "epub", "mobi", "pdf", "image-folder"]);
-    const activity = buildActivitySummary(books);
-    const recentBooks = books
+    return {
+      totalBooks,
+      readBooks,
+      averageProgress,
+      completedBooks,
+      activeDays30: activity.activeDays30,
+      currentStreakDays: activity.currentStreakDays
+    };
+  }
+
+  function buildRecentBooks(books) {
+    return books
       .filter((book) => book.lastOpenedAt || clamp01(book.progress?.percent) > 0)
       .slice(0, 6)
       .map((book) => ({
@@ -904,17 +914,19 @@ function createRepository(userDataPath) {
         progressPercent: clamp01(book.progress?.percent),
         lastOpenedAt: book.lastOpenedAt
       }));
+  }
+
+  function statsSummary() {
+    const library = listBooks();
+    const books = library.books;
+    const progressBands = buildProgressBands(books);
+    const contentTypes = countBookGroups(books, "contentType", ["novel", "comic"]);
+    const formats = countBookGroups(books, "format", ["txt", "epub", "mobi", "pdf", "image-folder"]);
+    const activity = buildActivitySummary(books);
 
     return {
       generatedAt: nowIso(),
-      overview: {
-        totalBooks,
-        readBooks,
-        averageProgress,
-        completedBooks,
-        activeDays30: activity.activeDays30,
-        currentStreakDays: activity.currentStreakDays
-      },
+      overview: buildOverview(books, activity),
       habits: {
         activeDays30: activity.activeDays30,
         currentStreakDays: activity.currentStreakDays,
@@ -926,7 +938,7 @@ function createRepository(userDataPath) {
       activityByDay: activity.activityByDay,
       contentTypes,
       formats,
-      recentBooks,
+      recentBooks: buildRecentBooks(books),
       advanced: diagnosticsSummary()
     };
   }
@@ -952,7 +964,7 @@ function createRepository(userDataPath) {
          LIMIT 80`
       )
       .all()
-      .map((row) => ({ ...row, details: row.detailsJson ? JSON.parse(row.detailsJson) : null }));
+      .map((row) => ({ ...row, details: parseJsonField(row.detailsJson) }));
     const stats = db
       .prepare(
         `SELECT

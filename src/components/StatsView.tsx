@@ -14,8 +14,10 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { AppSettings, StatsSummary } from "../types";
-import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat } from "../lib/format";
 import { globalBackgroundStyle } from "../lib/appearance";
+import { importStatusLabel, usesGeneratedTextCover } from "../lib/book";
+import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat } from "../lib/format";
+import { heightPercentStyle, widthPercentStyle } from "../lib/style";
 import { useTitlebarDoubleClick } from "../lib/ui";
 import { WindowControls } from "./WindowControls";
 
@@ -100,7 +102,7 @@ export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
                       <i
                         key={band.key}
                         className={`band-${band.key}`}
-                        style={{ width: `${Math.max(band.count ? 3 : 0, band.ratio * 100)}%` }}
+                        style={widthPercentStyle(band.ratio, band.count ? 3 : 0)}
                         title={`${band.label} ${band.count} 本`}
                       />
                     ))}
@@ -134,7 +136,7 @@ export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
                         <strong>{book.title}</strong>
                         <span>{labelForContentType(book.contentType)} · {labelForFormat(book.format)}</span>
                         <div className="mini-meter">
-                          <i style={{ width: `${Math.round(book.progressPercent * 100)}%` }} />
+                          <i style={widthPercentStyle(book.progressPercent)} />
                         </div>
                       </div>
                       <em>{book.lastOpenedAt ? formatRelativeDate(book.lastOpenedAt) : "未打开"}</em>
@@ -150,7 +152,7 @@ export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
                 {summary.activityByDay.map((day) => (
                   <div className="activity-day" key={day.day} title={`${day.day} · ${day.events} 次活动`}>
                     <span>
-                      <i style={{ height: `${Math.max(day.events ? 12 : 3, (day.events / maxDailyEvents) * 100)}%` }} />
+                      <i style={heightPercentStyle(day.events / maxDailyEvents, day.events ? 12 : 3)} />
                     </span>
                     <small>{formatDayLabel(day.day)}</small>
                   </div>
@@ -204,7 +206,7 @@ function RecentBookCover({ book }: { book: StatsSummary["recentBooks"][number] }
     );
   }
   return (
-    <div className={`recent-book-cover generated ${book.format === "txt" || book.format === "mobi" ? "txt" : ""}`}>
+    <div className={`recent-book-cover generated ${usesGeneratedTextCover(book.format) ? "txt" : ""}`}>
       <strong>{Array.from(book.title).slice(0, 2).join("")}</strong>
     </div>
   );
@@ -232,7 +234,7 @@ function DistributionList<T extends string>({
               <strong>{item.count} 本</strong>
             </div>
             <i>
-              <b style={{ width: `${Math.max(item.count ? 4 : 0, item.ratio * 100)}%` }} />
+              <b style={widthPercentStyle(item.ratio, item.count ? 4 : 0)} />
             </i>
           </div>
         ))
@@ -338,7 +340,7 @@ function MaintenanceStat({ label, value }: { label: string; value: string | numb
 }
 
 function StatusPill({ status }: { status: string }) {
-  return <span className={`status-pill ${status}`}>{statusLabel(status)}</span>;
+  return <span className={`status-pill ${status}`}>{importStatusLabel(status, { error: "失败" })}</span>;
 }
 
 function formatFavorite(summary: StatsSummary) {
@@ -350,14 +352,4 @@ function formatFavorite(summary: StatsSummary) {
 function formatDayLabel(value: string) {
   const [, month, day] = value.split("-");
   return `${Number(month)}/${Number(day)}`;
-}
-
-function statusLabel(status: string) {
-  if (status === "queued") return "排队";
-  if (status === "processing") return "处理中";
-  if (status === "ready") return "就绪";
-  if (status === "error") return "失败";
-  if (status === "stale") return "需重建";
-  if (status === "cancelled") return "已取消";
-  return status;
 }

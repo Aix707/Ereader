@@ -10,7 +10,8 @@ import type {
   PageUnit,
   StatsSummary,
   SystemFontItem,
-  TextUnit
+  TextUnit,
+  WindowState
 } from "./types";
 
 declare global {
@@ -40,11 +41,11 @@ declare global {
       onImportStateChanged: (callback: (state: ImportStateChange) => void) => () => void;
       windowControls: {
         minimize: () => Promise<void>;
-        toggleMaximize: () => Promise<{ isMaximized: boolean; isFullScreen: boolean }>;
-        toggleFullScreen: () => Promise<{ isMaximized: boolean; isFullScreen: boolean }>;
+        toggleMaximize: () => Promise<WindowState>;
+        toggleFullScreen: () => Promise<WindowState>;
         close: () => Promise<void>;
-        getState: () => Promise<{ isMaximized: boolean; isFullScreen: boolean }>;
-        onStateChanged: (callback: (state: { isMaximized: boolean; isFullScreen: boolean }) => void) => () => void;
+        getState: () => Promise<WindowState>;
+        onStateChanged: (callback: (state: WindowState) => void) => () => void;
       };
     };
   }

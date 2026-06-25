@@ -1,8 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { BookItem, NovelReadingSettings, ReadingProgress, TextUnit } from "../../types";
 import { formatPercent } from "../../lib/format";
+import { useElementSize } from "../../lib/elementSize";
 import { clampUnit } from "../../lib/number";
+import { type CssVariableStyle, heightPercentStyle, topPercentStyle } from "../../lib/style";
+import { cssFontFamily, estimateTextUnitHeight, findUnitAtOffset } from "../../lib/textReading";
 
 interface TextFlowReaderProps {
   book: BookItem;
@@ -15,13 +18,14 @@ interface TextFlowReaderProps {
 const VIRTUAL_OVERSCAN_UNITS = 36;
 const TEXT_PAGE_HORIZONTAL_PADDING = 128;
 const TEXT_PAGE_BOTTOM_SAFETY = 180;
+type TextPageStyle = CssVariableStyle<"novel-paragraph-spacing" | "novel-page-width">;
 
 export function TextFlowReader({ book, showToc, novelSettings, onProgress, onProgressLabel }: TextFlowReaderProps) {
   const [units, setUnits] = useState<TextUnit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
-  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const viewportSize = useElementSize(containerRef, units.length);
   const restoredRef = useRef(false);
   const ignoreScrollProgressRef = useRef(false);
 
@@ -30,7 +34,6 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
     setUnits([]);
     setError(null);
     setScrollTop(0);
-    setViewportSize({ width: 0, height: 0 });
     ignoreScrollProgressRef.current = false;
     window.ereader
       .getTextUnits(book.id)
@@ -55,7 +58,7 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
   const estimatedHeights = useMemo(
     () =>
       units.map((unit) =>
-        estimateUnitHeight(
+        estimateTextUnitHeight(
           unit,
           contentWidth,
           novelSettings.fontSize,
@@ -98,6 +101,22 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
     return clampUnit(scrollTop / scrollable);
   }, [scrollTop, viewportSize.height, virtualHeight]);
   const spacerHeight = virtualHeight + TEXT_PAGE_BOTTOM_SAFETY;
+  const textPageStyle = useMemo<TextPageStyle>(
+    () => ({
+      "--novel-paragraph-spacing": `${novelSettings.paragraphSpacing}em`,
+      "--novel-page-width": `${novelSettings.pageWidth}px`,
+      fontFamily: cssFontFamily(novelSettings.fontFamily),
+      fontSize: novelSettings.fontSize,
+      lineHeight: novelSettings.lineHeight
+    }),
+    [
+      novelSettings.fontFamily,
+      novelSettings.fontSize,
+      novelSettings.lineHeight,
+      novelSettings.pageWidth,
+      novelSettings.paragraphSpacing
+    ]
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -115,31 +134,10 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
     });
   }, [book.progress.percent, book.progress.scrollRatio, units.length, viewportSize.height, viewportSize.width, virtualHeight]);
 
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const measure = () =>
-      setViewportSize((current) => {
-        const next = {
-          width: Math.max(1, container.clientWidth),
-          height: Math.max(1, container.clientHeight)
-        };
-        return current.width === next.width && current.height === next.height ? current : next;
-      });
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [units.length]);
-
   function handleScroll() {
     const container = containerRef.current;
     if (!container) return;
     setScrollTop(container.scrollTop);
-    setViewportSize({
-      width: Math.max(1, container.clientWidth),
-      height: Math.max(1, container.clientHeight)
-    });
     const scrollable = Math.max(1, virtualHeight - container.clientHeight);
     const ratio = clampUnit(container.scrollTop / scrollable);
     onProgressLabel(formatPercent(ratio));
@@ -225,16 +223,7 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
         </aside>
       )}
       <article className="text-reader-scroll" ref={containerRef} onScroll={handleScroll}>
-        <div
-          className="text-page"
-          style={{
-            "--novel-paragraph-spacing": `${novelSettings.paragraphSpacing}em`,
-            "--novel-page-width": `${novelSettings.pageWidth}px`,
-            fontFamily: cssFontFamily(novelSettings.fontFamily),
-            fontSize: novelSettings.fontSize,
-            lineHeight: novelSettings.lineHeight
-          } as CSSProperties}
-        >
+        <div className="text-page" style={textPageStyle}>
           <div className="text-virtual-spacer" style={{ height: spacerHeight }}>
             <div
               className="text-virtual-window"
@@ -261,8 +250,8 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
         onKeyDown={handleProgressKeyDown}
       >
         <span className="text-progress-track">
-          <i style={{ height: `${progressRatio * 100}%` }} />
-          <b style={{ top: `${progressRatio * 100}%` }} />
+          <i style={heightPercentStyle(progressRatio)} />
+          <b style={topPercentStyle(progressRatio)} />
         </span>
       </div>
     </div>
@@ -303,68 +292,4 @@ function TextUnitBlock({ unit }: { unit: TextUnit }) {
 
 function AssetImage({ assetId, alt }: { assetId: number; alt: string }) {
   return <img src={window.ereader.getAssetUrl(assetId)} alt={alt} loading="lazy" />;
-}
-
-function estimateUnitHeight(
-  unit: TextUnit,
-  contentWidth: number,
-  fontSize: number,
-  lineHeight: number,
-  paragraphSpacing: number,
-  viewportHeight: number
-) {
-  const linePx = Math.max(18, fontSize * lineHeight);
-  const paragraphPx = Math.max(8, fontSize * paragraphSpacing);
-  const blockMargin = Math.max(14, paragraphPx);
-
-  if (unit.type === "heading") {
-    return Math.ceil(linePx * 1.7 + blockMargin * 1.8);
-  }
-
-  if (unit.type === "image") {
-    const maxImageHeight = Math.max(220, viewportHeight * 0.72);
-    if (unit.width && unit.height) {
-      const scale = Math.min(1, contentWidth / unit.width, maxImageHeight / unit.height);
-      return Math.ceil(unit.height * scale + blockMargin * 2.4);
-    }
-    return Math.ceil(Math.min(460, maxImageHeight) + blockMargin * 2.4);
-  }
-
-  const text = unit.text || stripHtml(unit.html || "");
-  const charsPerLine = Math.max(12, Math.floor(contentWidth / Math.max(10, fontSize * 0.98)));
-  const lines = text
-    .split(/\n/)
-    .map((line) => Math.max(1, Math.ceil(measureTextUnits(line.trim()) / charsPerLine)))
-    .reduce((sum, count) => sum + count, 0);
-  return Math.ceil(Math.max(1, lines) * linePx + paragraphPx);
-}
-
-function stripHtml(value: string) {
-  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function measureTextUnits(value: string) {
-  let units = 0;
-  for (const char of value) {
-    units += /[\u1100-\u11ff\u2e80-\ua4cf\uf900-\ufaff\uff00-\uffef]/.test(char) ? 1 : 0.58;
-  }
-  return units;
-}
-
-function cssFontFamily(value: string) {
-  const family = String(value || "").replace(/[\u0000-\u001f;"{}]/g, "").trim();
-  if (!family || family === "serif") return '"Times New Roman", SimSun, serif';
-  if (family === "system-ui") return 'system-ui, "Segoe UI", "Microsoft YaHei UI", sans-serif';
-  return `"${family.replace(/\\/g, "")}", "Microsoft YaHei", SimSun, serif`;
-}
-
-function findUnitAtOffset(offsets: number[], target: number) {
-  let low = 0;
-  let high = Math.max(0, offsets.length - 1);
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if (offsets[middle] <= target) low = middle + 1;
-    else high = middle;
-  }
-  return Math.max(0, low - 1);
 }

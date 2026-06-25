@@ -1,10 +1,11 @@
-import type { CSSProperties } from "react";
 import type { AppearanceSettings } from "../types";
 import { clampUnit } from "./number";
+import type { CssVariableStyle } from "./style";
 
 const DEFAULT_BACKGROUND_LAYER = "linear-gradient(#fff, #fff)";
+type BackgroundStyle = CssVariableStyle<"app-background-tint" | "app-background-layer" | "app-background-fill">;
 
-export function globalBackgroundStyle(appearance: AppearanceSettings): CSSProperties {
+export function globalBackgroundStyle(appearance: AppearanceSettings): BackgroundStyle {
   const opacity = clampUnit(appearance.backgroundOpacity, 0.18);
   const imageVersion = Number(appearance.backgroundImageVersion || 0);
   const layerMode = appearance.backgroundLayerMode || "default";
@@ -15,7 +16,7 @@ export function globalBackgroundStyle(appearance: AppearanceSettings): CSSProper
       "--app-background-tint": tintLayer,
       "--app-background-layer": "none",
       "--app-background-fill": "transparent"
-    } as CSSProperties;
+    };
   }
 
   return {
@@ -25,5 +26,5 @@ export function globalBackgroundStyle(appearance: AppearanceSettings): CSSProper
         ? `url("${window.ereader.getBackgroundImageUrl()}?v=${imageVersion}") center / cover no-repeat`
         : DEFAULT_BACKGROUND_LAYER,
     "--app-background-fill": "transparent"
-  } as CSSProperties;
+  };
 }

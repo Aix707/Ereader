@@ -2,6 +2,7 @@ export type BookFormat = "txt" | "pdf" | "epub" | "mobi" | "image-folder";
 export type ContentType = "novel" | "comic";
 export type PageSpread = "single" | "double";
 export type ReadingDirection = "ltr" | "rtl";
+export type ImportStatus = "queued" | "processing" | "ready" | "error" | "stale" | "cancelled";
 
 export interface NovelReadingSettings {
   fontSize: number;
@@ -25,6 +26,11 @@ export interface AppSettings {
 export interface SystemFontItem {
   family: string;
   source: "system" | "fallback";
+}
+
+export interface WindowState {
+  isMaximized: boolean;
+  isFullScreen: boolean;
 }
 
 export const DEFAULT_NOVEL_READING_SETTINGS: NovelReadingSettings = {
@@ -78,7 +84,7 @@ export interface BookItem {
   lastOpenedAt?: string | null;
   size?: number | null;
   sourceExists?: boolean;
-  importStatus?: "queued" | "processing" | "ready" | "error" | "stale" | "cancelled";
+  importStatus?: ImportStatus;
   importProgress?: number;
   importError?: string | null;
   unitCount?: number;

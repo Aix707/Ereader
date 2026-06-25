@@ -9,14 +9,15 @@ const { detectContentType } = require("./content-detector.cjs");
 const { imageFilesInFolder } = require("./importer.cjs");
 const { createWorkerImporter } = require("./import-worker-client.cjs");
 
-const FILE_FORMATS = new Map([
-  [".txt", "txt"],
-  [".pdf", "pdf"],
-  [".epub", "epub"],
-  [".mobi", "mobi"],
-  [".azw", "mobi"],
-  [".azw3", "mobi"]
-]);
+const BOOK_FORMATS = [
+  { name: "Text", format: "txt", extensions: ["txt"] },
+  { name: "PDF", format: "pdf", extensions: ["pdf"] },
+  { name: "EPUB", format: "epub", extensions: ["epub"] },
+  { name: "MOBI", format: "mobi", extensions: ["mobi", "azw", "azw3"] }
+];
+const FILE_FORMATS = new Map(
+  BOOK_FORMATS.flatMap((item) => item.extensions.map((extension) => [`.${extension}`, item.format]))
+);
 
 let mainWindow;
 let repo;
@@ -414,6 +415,13 @@ function inferFileFormat(filePath) {
   return FILE_FORMATS.get(path.extname(filePath).toLowerCase()) || null;
 }
 
+function importFileFilters() {
+  return [
+    { name: "Supported books", extensions: BOOK_FORMATS.flatMap((item) => item.extensions) },
+    ...BOOK_FORMATS.map((item) => ({ name: item.name, extensions: item.extensions }))
+  ];
+}
+
 function titleFromPath(absPath, format) {
   const base = path.basename(absPath);
   return format === "image-folder" ? base : base.replace(path.extname(base), "");
@@ -487,22 +495,10 @@ ipcMain.handle("dialog:importFiles", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "导入书籍",
     properties: ["openFile", "multiSelections"],
-    filters: [
-      { name: "Supported books", extensions: ["txt", "pdf", "epub", "mobi", "azw", "azw3"] },
-      { name: "Text", extensions: ["txt"] },
-      { name: "PDF", extensions: ["pdf"] },
-      { name: "EPUB", extensions: ["epub"] },
-      { name: "MOBI", extensions: ["mobi", "azw", "azw3"] }
-    ]
+    filters: importFileFilters()
   });
   if (result.canceled) return repo.listBooks();
-  const imported = [];
-  for (const filePath of result.filePaths) {
-    const format = inferFileFormat(filePath);
-    if (format) imported.push(await makeBook(filePath, "file", format));
-  }
-  for (const book of imported) importer.enqueue(book.id);
-  return repo.listBooks();
+  return importPaths(result.filePaths);
 });
 
 ipcMain.handle("dialog:importFolder", async () => {
@@ -511,9 +507,7 @@ ipcMain.handle("dialog:importFolder", async () => {
     properties: ["openDirectory"]
   });
   if (result.canceled || result.filePaths.length === 0) return repo.listBooks();
-  const imported = await scanFolderForBooks(result.filePaths[0]);
-  for (const book of imported) importer.enqueue(book.id);
-  return repo.listBooks();
+  return importPaths(result.filePaths);
 });
 
 ipcMain.handle("dialog:importDroppedPaths", async (_event, paths) => importPaths(paths));

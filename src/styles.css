@@ -8,7 +8,6 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 
-  --bg: #eef4fb;
   --surface: rgba(255, 255, 255, 0.18);
   --surface-soft: rgba(255, 255, 255, 0.08);
   --surface-strong: rgba(255, 255, 255, 0.34);
@@ -18,7 +17,6 @@
   --muted: #66758a;
   --muted-soft: #8a98aa;
   --accent: #2f6fd8;
-  --accent-soft: rgba(47, 111, 216, 0.12);
   --blue-glass: rgba(101, 169, 255, 0.22);
   --blue-glass-strong: rgba(94, 158, 246, 0.34);
   --blue-line: rgba(190, 221, 255, 0.94);
@@ -1657,18 +1655,21 @@ select,
 .comic-thumbnail-panel {
   position: absolute;
   z-index: 7;
-  top: var(--gap-md);
-  left: var(--gap-md);
-  width: 128px;
-  height: calc(100% - var(--gap-md) - 58px);
+  top: var(--comic-thumbnail-inset, var(--gap-md));
+  left: var(--comic-thumbnail-inset, var(--gap-md));
+  width: var(--comic-thumbnail-width, 128px);
+  height: calc(100% - var(--comic-thumbnail-inset, var(--gap-md)) - var(--comic-thumbnail-bottom-reserve, 58px));
   transition:
     opacity 180ms ease,
     transform 180ms ease;
 }
 
 .reader-shell.fullscreen .comic-thumbnail-panel {
-  top: calc(var(--topbar-height) + var(--gap-md));
-  height: calc(100% - var(--topbar-height) - var(--gap-md) - 58px);
+  top: calc(var(--topbar-height) + var(--comic-thumbnail-inset, var(--gap-md)));
+  height: calc(
+    100% - var(--topbar-height) - var(--comic-thumbnail-inset, var(--gap-md)) -
+      var(--comic-thumbnail-bottom-reserve, 58px)
+  );
 }
 
 .comic-thumbnail-list {
@@ -1683,7 +1684,7 @@ select,
 .comic-thumbnail-list button {
   display: grid;
   justify-items: center;
-  min-height: 112px;
+  min-height: var(--comic-thumbnail-item-height, 112px);
   padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -1870,14 +1871,14 @@ select,
 
 .comic-pages {
   position: absolute;
-  top: 6px;
-  right: 48px;
-  bottom: 6px;
-  left: calc(48px + var(--comic-sidebar-reserve, 0px));
+  top: calc(var(--comic-vertical-gutter, 12px) / 2);
+  right: var(--comic-side-gutter, 48px);
+  bottom: calc(var(--comic-vertical-gutter, 12px) / 2);
+  left: calc(var(--comic-side-gutter, 48px) + var(--comic-sidebar-reserve, 0px));
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--gap-md);
+  gap: var(--comic-page-gap, var(--gap-md));
   overflow: hidden;
 }
 
@@ -1921,7 +1922,7 @@ select,
   position: absolute;
   z-index: 4;
   top: 50%;
-  width: 42px;
+  width: var(--comic-page-turn-width, 42px);
   height: 72px;
   border: 1px solid var(--line);
   color: #415268;
@@ -1938,11 +1939,11 @@ select,
 }
 
 .page-turn.left {
-  left: calc(18px + var(--comic-control-reserve, 0px));
+  left: calc(var(--comic-page-turn-left, 18px) + var(--comic-control-reserve, 0px));
 }
 
 .page-turn.right {
-  right: 18px;
+  right: var(--comic-page-turn-left, 18px);
 }
 
 .floating-page-indicator {

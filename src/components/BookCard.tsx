@@ -1,8 +1,16 @@
 import { CircleStop, FileText, Images, RefreshCw, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import type { BookItem, BookPatch } from "../types";
+import {
+  canRebuildImport,
+  canToggleContentType,
+  importStatusLabel,
+  isBookReady,
+  isImportInProgress,
+  usesGeneratedTextCover
+} from "../lib/book";
 import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat } from "../lib/format";
-import { clampUnit } from "../lib/number";
+import { widthPercentStyle } from "../lib/style";
 
 interface BookCardProps {
   book: BookItem;
@@ -15,10 +23,9 @@ interface BookCardProps {
 
 export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCancelImport }: BookCardProps) {
   const progress = formatPercent(book.progress.percent || 0);
-  const progressValue = Math.round(clampUnit(book.progress.percent) * 100);
   const importStatus = book.importStatus || "ready";
   const canOpen = isBookReady(book);
-  const canToggleContent = book.format === "pdf" || book.format === "epub" || book.format === "mobi";
+  const canToggleContent = canToggleContentType(book.format);
   const cardRef = useRef<HTMLElement>(null);
   const [panelSide, setPanelSide] = useState<"left" | "right">("right");
   const lastReadText = book.lastOpenedAt ? `最近 ${formatRelativeDate(book.lastOpenedAt)}` : "尚未阅读";
@@ -42,7 +49,7 @@ export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCa
     >
       <button className="book-open-area" onClick={onOpen} disabled={!canOpen} title={book.path}>
         <div className="book-cover-row">
-          <BookCover book={book} progressValue={progressValue} />
+          <BookCover book={book} progressRatio={book.progress.percent || 0} />
           <div className="book-title-rail">
             <h3 title={book.title}>{book.title}</h3>
           </div>
@@ -51,16 +58,16 @@ export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCa
           <span className="book-summary-island">
             <span>{labelForContentType(book.contentType)}</span>
             <i aria-hidden="true" />
-            <span>{statusLabel(importStatus)}</span>
+            <span>{importStatusLabel(importStatus)}</span>
             <i aria-hidden="true" />
             <span>{progress}</span>
           </span>
         </div>
         {importStatus !== "ready" && (
           <div className="card-import-status">
-            <span>{statusLabel(importStatus)}</span>
+            <span>{importStatusLabel(importStatus)}</span>
             <div className="mini-meter">
-              <i style={{ width: `${Math.round((book.importProgress || 0) * 100)}%` }} />
+              <i style={widthPercentStyle(book.importProgress || 0)} />
             </div>
           </div>
         )}
@@ -70,7 +77,7 @@ export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCa
       <div className="book-hover-panel" aria-label={`${book.title} 详情`}>
         <div className="book-hover-heading">
           <strong title={book.title}>{book.title}</strong>
-          <span className={`status-pill ${importStatus}`}>{statusLabel(importStatus)}</span>
+          <span className={`status-pill ${importStatus}`}>{importStatusLabel(importStatus)}</span>
         </div>
         <p className="book-hover-path" title={book.path}>{book.path}</p>
         <div className="book-detail-grid">
@@ -93,11 +100,11 @@ export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCa
       </div>
 
       <div className="card-floating-actions" aria-label={`${book.title} 操作`}>
-        {importStatus === "queued" || importStatus === "processing" ? (
+        {isImportInProgress(importStatus) ? (
           <button className="card-action-button left" onClick={onCancelImport} title="取消导入" aria-label="取消导入">
             <CircleStop size={16} />
           </button>
-        ) : importStatus === "error" || importStatus === "stale" || importStatus === "cancelled" ? (
+        ) : canRebuildImport(importStatus) ? (
           <button className="card-action-button left" onClick={onRebuild} title="重建数据库内容" aria-label="重建数据库内容">
             <RefreshCw size={16} />
           </button>
@@ -119,13 +126,9 @@ export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCa
   );
 }
 
-export function isBookReady(book: BookItem) {
-  return book.importStatus === "ready" || !book.importStatus;
-}
-
-function BookCover({ book, progressValue }: { book: BookItem; progressValue: number }) {
+function BookCover({ book, progressRatio }: { book: BookItem; progressRatio: number }) {
   const assetUrl = book.coverAssetId ? window.ereader.getAssetUrl(book.coverAssetId) : null;
-  const isTextCover = !assetUrl && (book.format === "txt" || book.format === "mobi");
+  const isTextCover = !assetUrl && usesGeneratedTextCover(book.format);
 
   return (
     <div
@@ -150,20 +153,10 @@ function BookCover({ book, progressValue }: { book: BookItem; progressValue: num
         </div>
       )}
       <div className="cover-progress" aria-hidden="true">
-        <i style={{ width: `${progressValue}%` }} />
+        <i style={widthPercentStyle(progressRatio)} />
       </div>
     </div>
   );
-}
-
-function statusLabel(status: string) {
-  if (status === "queued") return "排队";
-  if (status === "processing") return "处理中";
-  if (status === "ready") return "就绪";
-  if (status === "error") return "错误";
-  if (status === "stale") return "需重建";
-  if (status === "cancelled") return "已取消";
-  return status;
 }
 
 function titleMark(title: string) {

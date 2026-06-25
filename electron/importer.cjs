@@ -452,6 +452,22 @@ function orderedMobiImages(mobi, imageNodes) {
   return orderedImages;
 }
 
+function renditionKindForBook(book) {
+  if (book.source_format === "txt") return "text-flow";
+  if (book.source_format === "mobi" && book.content_type !== "comic") return "text-flow";
+  if (book.source_format === "epub" && book.content_type !== "comic") return "text-flow";
+  return "page-flow";
+}
+
+async function processBookContent(repo, book, renditionId, notify, assertActive) {
+  if (book.source_format === "txt") return processTxt(repo, book, renditionId, notify, assertActive);
+  if (book.source_format === "mobi") return processMobi(repo, book, renditionId, notify, assertActive);
+  if (book.source_format === "image-folder") return processImageFolder(repo, book, renditionId, notify, assertActive);
+  if (book.source_format === "pdf") return processPdf(repo, book, renditionId, notify, assertActive);
+  if (book.source_format === "epub") return processEpub(repo, book, renditionId, notify, assertActive);
+  throw new Error(`Unsupported format: ${book.source_format}`);
+}
+
 async function processEpub(repo, book, renditionId, notify, assertActive) {
   const zip = await readZipEntries(book.source_path);
   try {
@@ -484,9 +500,7 @@ function createImporter(repo, options = {}) {
     if (!book) return;
     const stats = repo.sourceStats(book.source_path, book.source_kind);
     if (!stats.exists) throw new Error("Source file is missing");
-    const renditionKind = book.source_format === "txt" || (book.source_format === "mobi" && book.content_type !== "comic") || (book.source_format === "epub" && book.content_type !== "comic")
-      ? "text-flow"
-      : "page-flow";
+    const renditionKind = renditionKindForBook(book);
     const assertActive = () => {
       if (cancelled.has(bookId)) {
         cancelled.delete(bookId);
@@ -502,12 +516,7 @@ function createImporter(repo, options = {}) {
       options.onProgress?.(book.id, next);
     };
     notify(0.01);
-    if (book.source_format === "txt") await processTxt(repo, book, renditionId, notify, assertActive);
-    else if (book.source_format === "mobi") await processMobi(repo, book, renditionId, notify, assertActive);
-    else if (book.source_format === "image-folder") await processImageFolder(repo, book, renditionId, notify, assertActive);
-    else if (book.source_format === "pdf") await processPdf(repo, book, renditionId, notify, assertActive);
-    else if (book.source_format === "epub") await processEpub(repo, book, renditionId, notify, assertActive);
-    else throw new Error(`Unsupported format: ${book.source_format}`);
+    await processBookContent(repo, book, renditionId, notify, assertActive);
     assertActive();
     repo.finishContent(book.id);
     repo.addDiagnostic(book.id, "info", "Import complete", { finishedAt: nowIso(), renditionKind });

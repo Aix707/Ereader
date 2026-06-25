@@ -1,7 +1,19 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, WheelEvent } from "react";
+import {
+  clampAndAlignIndex,
+  getContainedSize,
+  lastSpreadStartIndex,
+  nextSpreadStart,
+  pageIndexFromProgress,
+  pageIndexesForPreload,
+  pageIndexesForSpread,
+  previousSpreadStart,
+  spreadDisplayWidth
+} from "../../lib/comicReading";
+import { type ElementSize, useElementSize } from "../../lib/elementSize";
+import type { CssVariableStyle } from "../../lib/style";
 import type { BookItem, PageUnit, ReadingProgress } from "../../types";
 
 interface PageFlowReaderProps {
@@ -11,24 +23,28 @@ interface PageFlowReaderProps {
   onProgressLabel: (label: string) => void;
 }
 
-const PAGE_GAP = 12;
 const PRELOAD_SPREAD_RADIUS = 2;
 const HIDDEN_PRELOAD_SPREAD_RADIUS = 1;
 const DECODE_CACHE_MAX_ASSETS = 18;
 const DECODE_CACHE_MAX_BYTES = 128 * 1024 * 1024;
 const WHEEL_PAGE_THRESHOLD = 48;
 const WHEEL_COOLDOWN_MS = 180;
-const THUMBNAIL_ITEM_HEIGHT = 112;
 const THUMBNAIL_OVERSCAN_ITEMS = 8;
-const COMIC_SIDE_GUTTER = 48;
-const COMIC_VERTICAL_GUTTER = 12;
-const THUMBNAIL_PANEL_LEFT = 12;
-const THUMBNAIL_PANEL_WIDTH = 128;
-const THUMBNAIL_SAFE_GAP = 12;
-const THUMBNAIL_RESERVE = THUMBNAIL_PANEL_LEFT + THUMBNAIL_PANEL_WIDTH + THUMBNAIL_SAFE_GAP;
-const PAGE_TURN_LEFT_OFFSET = 18;
-const PAGE_TURN_WIDTH = 42;
-const CONTENT_SAFE_LEFT_WITH_THUMBNAILS = THUMBNAIL_RESERVE + PAGE_TURN_LEFT_OFFSET + PAGE_TURN_WIDTH + THUMBNAIL_SAFE_GAP;
+const COMIC_LAYOUT = {
+  pageGap: 12,
+  sideGutter: 48,
+  verticalGutter: 12,
+  thumbnailInset: 12,
+  thumbnailWidth: 128,
+  thumbnailBottomReserve: 58,
+  thumbnailItemHeight: 112,
+  safeGap: 12,
+  pageTurnLeft: 18,
+  pageTurnWidth: 42
+} as const;
+const THUMBNAIL_RESERVE = COMIC_LAYOUT.thumbnailInset + COMIC_LAYOUT.thumbnailWidth + COMIC_LAYOUT.safeGap;
+const CONTENT_SAFE_LEFT_WITH_THUMBNAILS =
+  THUMBNAIL_RESERVE + COMIC_LAYOUT.pageTurnLeft + COMIC_LAYOUT.pageTurnWidth + COMIC_LAYOUT.safeGap;
 
 interface DecodeCacheEntry {
   image: HTMLImageElement;
@@ -38,6 +54,8 @@ interface DecodeCacheEntry {
   lastUsed: number;
   promise?: Promise<void>;
 }
+
+type ComicCssVariables = CssVariableStyle<`comic-${string}`>;
 
 export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLabel }: PageFlowReaderProps) {
   const [pages, setPages] = useState<PageUnit[]>([]);
@@ -52,7 +70,7 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
   const lastWheelAtRef = useRef(0);
   const decodeCacheRef = useRef<Map<number, DecodeCacheEntry>>(new Map());
   const didRestoreProgressRef = useRef(false);
-  const [readerSize, setReaderSize] = useState({ width: 0, height: 0 });
+  const readerSize = useElementSize(readerRef, pages.length);
 
   useEffect(() => {
     setError(null);
@@ -194,66 +212,23 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
     });
   }, [pages.length, preloadAroundIndex, spreadSize]);
 
-  useEffect(() => {
-    const element = readerRef.current;
-    if (!element) return;
+  const fullPageBounds = useMemo(
+    () => comicPageBounds(readerSize, visiblePages.length),
+    [readerSize.height, readerSize.width, visiblePages.length]
+  );
 
-    let animationFrame = 0;
-    const measure = () => {
-      window.cancelAnimationFrame(animationFrame);
-      animationFrame = window.requestAnimationFrame(() => {
-        setReaderSize({
-          width: element.clientWidth,
-          height: element.clientHeight
-        });
-      });
-    };
+  const sidebarReserve = useMemo(
+    () => thumbnailSidebarReserve(showThumbnails, visiblePages, readerSize.width, fullPageBounds),
+    [fullPageBounds, readerSize.width, showThumbnails, visiblePages]
+  );
 
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    window.addEventListener("resize", measure);
+  const pageBounds = useMemo(
+    () => comicPageBounds(readerSize, visiblePages.length, sidebarReserve),
+    [readerSize.height, readerSize.width, sidebarReserve, visiblePages.length]
+  );
 
-    return () => {
-      window.cancelAnimationFrame(animationFrame);
-      observer.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [pages.length]);
-
-  const fullPageBounds = useMemo(() => {
-    const columns = visiblePages.length > 1 ? 2 : 1;
-    return {
-      width: Math.max(0, (readerSize.width - COMIC_SIDE_GUTTER * 2 - PAGE_GAP * (columns - 1)) / columns),
-      height: Math.max(0, readerSize.height - COMIC_VERTICAL_GUTTER)
-    };
-  }, [readerSize.height, readerSize.width, visiblePages.length]);
-
-  const sidebarReserve = useMemo(() => {
-    if (!showThumbnails || !visiblePages.length || readerSize.width <= 0) return 0;
-    const spreadWidth = spreadDisplayWidth(visiblePages, fullPageBounds, PAGE_GAP);
-    if (spreadWidth <= 0) return 0;
-    const spreadLeftEdge = (readerSize.width - spreadWidth) / 2;
-    return spreadLeftEdge < CONTENT_SAFE_LEFT_WITH_THUMBNAILS ? THUMBNAIL_RESERVE : 0;
-  }, [fullPageBounds, readerSize.width, showThumbnails, visiblePages]);
-
-  const pageBounds = useMemo(() => {
-    const columns = visiblePages.length > 1 ? 2 : 1;
-    return {
-      width: Math.max(
-        0,
-        (readerSize.width - COMIC_SIDE_GUTTER * 2 - sidebarReserve - PAGE_GAP * (columns - 1)) / columns
-      ),
-      height: Math.max(0, readerSize.height - COMIC_VERTICAL_GUTTER)
-    };
-  }, [readerSize.height, readerSize.width, sidebarReserve, visiblePages.length]);
-
-  const comicReserveStyle = useMemo(
-    () =>
-      ({
-        "--comic-control-reserve": `${showThumbnails ? THUMBNAIL_RESERVE : 0}px`,
-        "--comic-sidebar-reserve": `${sidebarReserve}px`
-      }) as CSSProperties,
+  const comicLayoutStyle = useMemo(
+    () => comicLayoutVariables(showThumbnails, sidebarReserve),
     [showThumbnails, sidebarReserve]
   );
 
@@ -301,7 +276,7 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
   if (!pages.length) return <div className="reader-loading">正在读取页面缓存...</div>;
 
   return (
-    <div className="page-reader-layout">
+    <div className="page-reader-layout" style={comicLayoutStyle}>
       {showThumbnails && (
         <ComicThumbnailPanel
           pages={pages}
@@ -310,7 +285,7 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
           onSelect={goToIndex}
         />
       )}
-      <div ref={readerRef} className="comic-reader" style={comicReserveStyle} onWheel={handleWheel}>
+      <div ref={readerRef} className="comic-reader" onWheel={handleWheel}>
         <button className="page-turn left" onClick={goPrevious} disabled={currentIndex <= 0}>
           <ChevronLeft size={22} />
         </button>
@@ -404,8 +379,11 @@ function ComicThumbnailPanel({
   const updateRenderRange = useCallback(() => {
     const element = listRef.current;
     if (!element) return;
-    const start = Math.max(0, Math.floor(element.scrollTop / THUMBNAIL_ITEM_HEIGHT) - THUMBNAIL_OVERSCAN_ITEMS);
-    const visible = Math.ceil(element.clientHeight / THUMBNAIL_ITEM_HEIGHT) + THUMBNAIL_OVERSCAN_ITEMS * 2;
+    const start = Math.max(
+      0,
+      Math.floor(element.scrollTop / COMIC_LAYOUT.thumbnailItemHeight) - THUMBNAIL_OVERSCAN_ITEMS
+    );
+    const visible = Math.ceil(element.clientHeight / COMIC_LAYOUT.thumbnailItemHeight) + THUMBNAIL_OVERSCAN_ITEMS * 2;
     const end = Math.min(pages.length - 1, start + visible);
     setRenderRange((current) => (current.start === start && current.end === end ? current : { start, end }));
   }, [pages.length]);
@@ -434,7 +412,8 @@ function ComicThumbnailPanel({
       </div>
       <div ref={listRef} className="comic-thumbnail-list" onScroll={updateRenderRange}>
         {pages.map((page, index) => {
-          const shouldLoad = index >= renderRange.start && index <= renderRange.end || Math.abs(index - currentIndex) <= 5;
+          const shouldLoad =
+            (index >= renderRange.start && index <= renderRange.end) || Math.abs(index - currentIndex) <= 5;
           return (
             <button
               key={page.id}
@@ -471,95 +450,40 @@ function ThumbnailImage({ page }: { page: PageUnit }) {
   );
 }
 
-function getContainedSize(sourceWidth: number, sourceHeight: number, maxWidth: number, maxHeight: number) {
-  if (sourceWidth <= 0 || sourceHeight <= 0 || maxWidth <= 0 || maxHeight <= 0) return null;
-  const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
+function comicPageBounds(readerSize: ElementSize, visiblePageCount: number, sidebarReserve = 0) {
+  const columns = visiblePageCount > 1 ? 2 : 1;
   return {
-    width: Math.max(1, Math.floor(sourceWidth * scale)),
-    height: Math.max(1, Math.floor(sourceHeight * scale))
+    width: Math.max(
+      0,
+      (readerSize.width - COMIC_LAYOUT.sideGutter * 2 - sidebarReserve - COMIC_LAYOUT.pageGap * (columns - 1)) /
+        columns
+    ),
+    height: Math.max(0, readerSize.height - COMIC_LAYOUT.verticalGutter)
   };
 }
 
-function spreadDisplayWidth(pages: PageUnit[], bounds: { width: number; height: number }, gap: number) {
-  const widths = pages
-    .map((page) => getContainedSize(page.width, page.height, bounds.width, bounds.height)?.width || 0)
-    .filter((width) => width > 0);
-  if (!widths.length) return 0;
-  return widths.reduce((sum, width) => sum + width, 0) + gap * Math.max(0, widths.length - 1);
+function thumbnailSidebarReserve(showThumbnails: boolean, pages: PageUnit[], readerWidth: number, fullBounds: ElementSize) {
+  if (!showThumbnails || !pages.length || readerWidth <= 0) return 0;
+  const spreadWidth = spreadDisplayWidth(pages, fullBounds, COMIC_LAYOUT.pageGap);
+  if (spreadWidth <= 0) return 0;
+  const spreadLeftEdge = (readerWidth - spreadWidth) / 2;
+  return spreadLeftEdge < CONTENT_SAFE_LEFT_WITH_THUMBNAILS ? THUMBNAIL_RESERVE : 0;
 }
 
-function pageIndexFromProgress(progress: ReadingProgress) {
-  if (typeof progress.page === "number" && progress.page > 0) return Math.max(0, progress.page - 1);
-  const percent = Number(progress.percent || 0);
-  const totalPages = Number(progress.totalPages || 0);
-  if (Number.isFinite(percent) && percent > 0 && totalPages > 1) {
-    return Math.max(0, Math.round(Math.min(1, percent) * (totalPages - 1)));
-  }
-  return 0;
-}
-
-function alignToSpreadStart(index: number, spreadSize: number) {
-  if (spreadSize <= 1 || index <= 0) return Math.max(0, index);
-  return Math.max(1, 1 + Math.floor((index - 1) / spreadSize) * spreadSize);
-}
-
-function clampAndAlignIndex(index: number, totalPages: number, spreadSize: number) {
-  if (totalPages <= 0) return 0;
-  const clamped = Math.max(0, Math.min(totalPages - 1, index));
-  return Math.max(0, Math.min(totalPages - 1, alignToSpreadStart(clamped, spreadSize)));
-}
-
-function pageIndexesForSpread(startIndex: number, spreadSize: number, totalPages: number) {
-  if (totalPages <= 0) return [];
-  const aligned = clampAndAlignIndex(startIndex, totalPages, spreadSize);
-  if (spreadSize <= 1 || aligned === 0) return [aligned];
-  const indexes: number[] = [];
-  for (let index = aligned; index < aligned + spreadSize && index < totalPages; index += 1) {
-    indexes.push(index);
-  }
-  return indexes;
-}
-
-function spreadStarts(totalPages: number, spreadSize: number) {
-  if (totalPages <= 0) return [];
-  if (spreadSize <= 1) return Array.from({ length: totalPages }, (_, index) => index);
-  const starts = [0];
-  for (let index = 1; index < totalPages; index += spreadSize) {
-    starts.push(index);
-  }
-  return starts;
-}
-
-function lastSpreadStartIndex(totalPages: number, spreadSize: number) {
-  const starts = spreadStarts(totalPages, spreadSize);
-  return starts[starts.length - 1] || 0;
-}
-
-function nextSpreadStart(currentIndex: number, totalPages: number, spreadSize: number) {
-  const starts = spreadStarts(totalPages, spreadSize);
-  const current = clampAndAlignIndex(currentIndex, totalPages, spreadSize);
-  const position = Math.max(0, starts.indexOf(current));
-  return starts[Math.min(starts.length - 1, position + 1)] || current;
-}
-
-function previousSpreadStart(currentIndex: number, spreadSize: number) {
-  if (spreadSize <= 1) return currentIndex - 1;
-  if (currentIndex <= 1) return 0;
-  return currentIndex - spreadSize;
-}
-
-function pageIndexesForPreload(centerIndex: number, spreadSize: number, totalPages: number, radius: number) {
-  if (totalPages <= 0) return [];
-  const indexes = new Set<number>();
-  const starts = spreadStarts(totalPages, spreadSize);
-  const spreadStart = clampAndAlignIndex(centerIndex, totalPages, spreadSize);
-  const currentPosition = Math.max(0, starts.indexOf(spreadStart));
-  const startPosition = Math.max(0, currentPosition - radius);
-  const endPosition = Math.min(starts.length - 1, currentPosition + radius);
-  for (let position = startPosition; position <= endPosition; position += 1) {
-    for (const index of pageIndexesForSpread(starts[position], spreadSize, totalPages)) indexes.add(index);
-  }
-  return [...indexes].sort((left, right) => left - right);
+function comicLayoutVariables(showThumbnails: boolean, sidebarReserve: number): ComicCssVariables {
+  return {
+    "--comic-page-gap": `${COMIC_LAYOUT.pageGap}px`,
+    "--comic-side-gutter": `${COMIC_LAYOUT.sideGutter}px`,
+    "--comic-vertical-gutter": `${COMIC_LAYOUT.verticalGutter}px`,
+    "--comic-control-reserve": `${showThumbnails ? THUMBNAIL_RESERVE : 0}px`,
+    "--comic-sidebar-reserve": `${sidebarReserve}px`,
+    "--comic-thumbnail-bottom-reserve": `${COMIC_LAYOUT.thumbnailBottomReserve}px`,
+    "--comic-thumbnail-item-height": `${COMIC_LAYOUT.thumbnailItemHeight}px`,
+    "--comic-thumbnail-inset": `${COMIC_LAYOUT.thumbnailInset}px`,
+    "--comic-thumbnail-width": `${COMIC_LAYOUT.thumbnailWidth}px`,
+    "--comic-page-turn-left": `${COMIC_LAYOUT.pageTurnLeft}px`,
+    "--comic-page-turn-width": `${COMIC_LAYOUT.pageTurnWidth}px`
+  };
 }
 
 function warmDecodePage(cache: Map<number, DecodeCacheEntry>, page: PageUnit) {

@@ -16,9 +16,10 @@ import { useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import type { AppSettings, BookItem, BookPatch, LibraryStore } from "../types";
 import { globalBackgroundStyle } from "../lib/appearance";
+import { summarizeLibrary } from "../lib/book";
 import { useTitlebarDoubleClick } from "../lib/ui";
 import { AppearanceSettingsMenu } from "./AppearanceSettingsMenu";
-import { BookCard, isBookReady } from "./BookCard";
+import { BookCard } from "./BookCard";
 import { WindowControls } from "./WindowControls";
 
 type FilterKey = "all" | "recent" | "novel" | "comic";
@@ -87,17 +88,8 @@ export function LibraryView({
       });
   }, [filter, query, store.books]);
 
-  const readyBooks = store.books.filter((book) => isBookReady(book)).length;
-  const recent = store.books.filter((book) => book.lastOpenedAt).length;
-  const novels = store.books.filter((book) => book.contentType === "novel").length;
-  const comics = store.books.filter((book) => book.contentType === "comic").length;
-  const continueBook = useMemo(
-    () =>
-      [...store.books]
-        .filter((book) => isBookReady(book) && book.lastOpenedAt)
-        .sort((a, b) => new Date(b.lastOpenedAt || 0).getTime() - new Date(a.lastOpenedAt || 0).getTime())[0] || null,
-    [store.books]
-  );
+  const librarySummary = useMemo(() => summarizeLibrary(store.books), [store.books]);
+  const continueBook = librarySummary.continueBook;
   const shellStyle = useMemo(() => globalBackgroundStyle(appSettings.appearance), [appSettings.appearance]);
   const handleTitlebarDoubleClick = useTitlebarDoubleClick("button, .window-controls");
 
@@ -173,16 +165,16 @@ export function LibraryView({
 
         <nav className="nav-stack" aria-label="书库筛选">
           <FilterButton icon={<Library size={17} />} active={filter === "all"} onClick={() => setFilter("all")}>
-            全部 <span>{store.books.length}</span>
+            全部 <span>{librarySummary.total}</span>
           </FilterButton>
           <FilterButton icon={<Clock3 size={17} />} active={filter === "recent"} onClick={() => setFilter("recent")}>
-            最近 <span>{recent}</span>
+            最近 <span>{librarySummary.recent}</span>
           </FilterButton>
           <FilterButton icon={<FileText size={17} />} active={filter === "novel"} onClick={() => setFilter("novel")}>
-            小说 <span>{novels}</span>
+            小说 <span>{librarySummary.novels}</span>
           </FilterButton>
           <FilterButton icon={<Images size={17} />} active={filter === "comic"} onClick={() => setFilter("comic")}>
-            漫画 <span>{comics}</span>
+            漫画 <span>{librarySummary.comics}</span>
           </FilterButton>
           <button className="nav-item" onClick={onOpenStats}>
             <ChartNoAxesCombined size={17} />
@@ -208,10 +200,10 @@ export function LibraryView({
             <p className="eyebrow">Library</p>
             <h2>阅读书架</h2>
             <div className="library-stats" aria-label="书库统计">
-              <span>{store.books.length} 本</span>
-              <span>{readyBooks} 就绪</span>
-              <span>{comics} 漫画</span>
-              <span>{novels} 小说</span>
+              <span>{librarySummary.total} 本</span>
+              <span>{librarySummary.ready} 就绪</span>
+              <span>{librarySummary.comics} 漫画</span>
+              <span>{librarySummary.novels} 小说</span>
             </div>
           </div>
 

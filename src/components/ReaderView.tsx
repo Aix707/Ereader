@@ -17,6 +17,8 @@ import { SegmentedControl } from "./SegmentedControl";
 import { TypographyMenu } from "./TypographyMenu";
 import { WindowControls } from "./WindowControls";
 import { globalBackgroundStyle } from "../lib/appearance";
+import { canUseComicMode, isBookReady, usesPageReader } from "../lib/book";
+import { widthPercentStyle } from "../lib/style";
 import type {
   AppSettings,
   BookItem,
@@ -179,10 +181,10 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
     revealChrome();
   }, [clearChromeHideTimer, isFullScreen, revealChrome]);
 
-  const canBeComic = book.format === "pdf" || book.format === "epub" || book.format === "mobi" || book.format === "image-folder";
+  const canBeComic = canUseComicMode(book.format);
   const isComic = book.contentType === "comic";
-  const isReady = book.importStatus === "ready" || !book.importStatus;
-  const usePageReader = book.contentType === "comic" || book.format === "pdf" || book.format === "image-folder";
+  const isReady = isBookReady(book);
+  const usePageReader = usesPageReader(book);
   const sidePanelVisible = showToc && (!isFullScreen || chromeVisible);
   const sidePanelTitle = isComic
     ? showToc ? "隐藏缩略图" : "显示缩略图"
@@ -259,7 +261,7 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
             <h2>{book.importStatus === "error" ? "处理失败" : "正在处理导入内容"}</h2>
             <p>{book.importError || "导入内容会写入 SQLite 数据库，完成后即可阅读。"}</p>
             <div className="processing-meter">
-              <span style={{ width: `${Math.round((book.importProgress || 0) * 100)}%` }} />
+              <span style={widthPercentStyle(book.importProgress || 0)} />
             </div>
           </div>
         ) : usePageReader ? (

@@ -1,10 +1,6 @@
 import { Fullscreen, Minus, Shrink, Square, SquareStack, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-
-type WindowState = {
-  isMaximized: boolean;
-  isFullScreen: boolean;
-};
+import type { WindowState } from "../types";
 
 export function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
@@ -15,19 +11,20 @@ export function WindowControls() {
     setIsFullScreen(state.isFullScreen);
   }, []);
 
+  const runWindowAction = useCallback(
+    (action: () => Promise<WindowState>) => {
+      action().then(applyState).catch(() => undefined);
+    },
+    [applyState]
+  );
+
   const toggleMaximize = useCallback(() => {
-    window.ereader.windowControls
-      .toggleMaximize()
-      .then(applyState)
-      .catch(() => undefined);
-  }, [applyState]);
+    runWindowAction(window.ereader.windowControls.toggleMaximize);
+  }, [runWindowAction]);
 
   const toggleFullScreen = useCallback(() => {
-    window.ereader.windowControls
-      .toggleFullScreen()
-      .then(applyState)
-      .catch(() => undefined);
-  }, [applyState]);
+    runWindowAction(window.ereader.windowControls.toggleFullScreen);
+  }, [runWindowAction]);
 
   useEffect(() => {
     let cleanup: () => void = () => undefined;
