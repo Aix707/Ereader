@@ -102,4 +102,6 @@ cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
 发布前提交已审核的源码，再执行 `npm run package:win` 和 `npm run prepare:release`。源码归档只包含该提交的 Git 文件，拒绝测试数据库、生成目录和疑似凭据。发布工作流执行回归并生成四项分发文件；tag 对应的正式版本已经发布时保留其资产，否则准备 draft Release。本地打包命令不上传或发布。体积与验收边界见 [验证记录](OPTIMIZATION.md)。
 
+GitHub 托管 Windows Server 执行构建、TypeScript/Rust 单元测试与打包。当前托管环境未通过交互式 WebView2 启动检查，真实导入、窗口和缩放回归在目标 Windows 10/11 交互桌面上运行，作为本地发布验收。
+
 应用不包含账号、云同步、批注、全文搜索或 CBZ/CBR 支持。当前安装包未进行代码签名。

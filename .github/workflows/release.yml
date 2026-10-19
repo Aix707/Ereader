@@ -54,27 +54,8 @@ jobs:
       - name: Verify imports and persistence
         run: npm test
 
-      - name: Ensure shared WebView2 runtime
-        shell: pwsh
-        run: |
-          $runtimeRoot = Join-Path ${env:ProgramFiles(x86)} 'Microsoft\EdgeWebView\Application'
-          $runtime = @(Get-ChildItem -LiteralPath $runtimeRoot -Filter msedgewebview2.exe -File -Recurse -ErrorAction SilentlyContinue)
-          if ($runtime.Count -eq 0) {
-            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
-            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
-            $installation = Start-Process -FilePath $installer -ArgumentList '/silent','/install' -WindowStyle Hidden -Wait -PassThru
-            if ($installation.ExitCode -ne 0) { throw "WebView2 installer exited with $($installation.ExitCode)" }
-          }
-          $runtime = @(Get-ChildItem -LiteralPath $runtimeRoot -Filter msedgewebview2.exe -File -Recurse -ErrorAction SilentlyContinue)
-          if ($runtime.Count -eq 0) { throw 'Shared WebView2 runtime was not found' }
-          $runtime | Select-Object FullName,@{Name='Version';Expression={$_.VersionInfo.ProductVersion}}
-
-      - name: Verify WebView2 imports
-        run: npm run test:desktop
-
-      - name: Verify fullscreen client bounds and restore
-        run: npm run test:window -- --skip-build
-
+      # Interactive WebView2/Win32 regressions run on the target Windows 10/11
+      # desktop before release. Hosted Windows Server validates build/unit/package.
       - name: Package Windows installer
         run: npm run release:win
 
@@ -113,11 +94,12 @@ jobs:
             release/Ereader-*-Source.zip
             release/SHA256SUMS.txt
 
-      - name: Upload regression diagnostics
+      - name: Upload build verification
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-regression-diagnostics
+          name: windows-build-verification
           if-no-files-found: ignore
           path: |
-            output/**/report.json
+            release/size-report.json
+            release/release-manifest.json
