@@ -89,6 +89,7 @@ export interface BookItem {
   importError?: string | null;
   unitCount?: number;
   assetCount?: number;
+  renditionVersion?: number;
   progress: ReadingProgress;
   preferences: ReaderPreferences;
 }
@@ -214,7 +215,6 @@ export interface StatsSummary {
     progressPercent: number;
     lastOpenedAt?: string | null;
   }>;
-  advanced: DiagnosticsSummary;
 }
 
 export interface ImportStateChange {
@@ -230,3 +230,44 @@ export type BookPatch = Partial<
   progress?: Partial<ReadingProgress>;
   preferences?: Partial<ReaderPreferences>;
 };
+
+export interface NativeDrop {
+  type: "enter" | "leave" | "drop";
+  paths: string[];
+}
+
+export interface EreaderApi {
+  listLibrary(): Promise<LibraryStore>;
+  getBook(id: string): Promise<BookItem | null>;
+  importFiles(): Promise<LibraryStore>;
+  importFolder(): Promise<LibraryStore>;
+  importDroppedPaths(paths: string[]): Promise<LibraryStore>;
+  onNativeDrop(callback: (event: NativeDrop) => void): () => void;
+  updateBook(id: string, patch: BookPatch): Promise<BookItem>;
+  removeBook(id: string): Promise<LibraryStore>;
+  revealBook(id: string): Promise<void>;
+  getTextUnits(id: string): Promise<TextUnit[]>;
+  getPageUnits(id: string): Promise<PageUnit[]>;
+  getAssetUrl(assetId: number): string;
+  rebuildBook(id: string): Promise<BookItem>;
+  cancelImport(id: string): Promise<BookItem>;
+  getDiagnostics(): Promise<DiagnosticsSummary>;
+  getStats(): Promise<StatsSummary>;
+  getAppSettings(): Promise<AppSettings>;
+  updateAppSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  chooseBackgroundImage(): Promise<AppSettings>;
+  resetBackground(): Promise<AppSettings>;
+  removeBackground(): Promise<AppSettings>;
+  getBackgroundImageUrl(): string;
+  listSystemFonts(): Promise<SystemFontItem[]>;
+  onImportStateChanged(callback: (state: ImportStateChange) => void): () => void;
+  windowControls: {
+    minimize(): Promise<void>;
+    toggleMaximize(): Promise<WindowState>;
+    toggleFullScreen(): Promise<WindowState>;
+    setFullScreen(enabled: boolean): Promise<WindowState>;
+    close(): Promise<void>;
+    getState(): Promise<WindowState>;
+    onStateChanged(callback: (state: WindowState) => void): () => void;
+  };
+}

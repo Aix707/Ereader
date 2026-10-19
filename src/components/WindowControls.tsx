@@ -1,74 +1,25 @@
-import { Fullscreen, Minus, Shrink, Square, SquareStack, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import type { WindowState } from "../types";
+import { Minus, Square, SquareStack, X } from "lucide-react";
+import { useWindowState } from "../lib/window";
 
 export function WindowControls() {
-  const [isMaximized, setIsMaximized] = useState(false);
-  const [isFullScreen, setIsFullScreen] = useState(false);
-
-  const applyState = useCallback((state: WindowState) => {
-    setIsMaximized(state.isMaximized);
-    setIsFullScreen(state.isFullScreen);
-  }, []);
-
-  const runWindowAction = useCallback(
-    (action: () => Promise<WindowState>) => {
-      action().then(applyState).catch(() => undefined);
-    },
-    [applyState]
-  );
-
-  const toggleMaximize = useCallback(() => {
-    runWindowAction(window.ereader.windowControls.toggleMaximize);
-  }, [runWindowAction]);
-
-  const toggleFullScreen = useCallback(() => {
-    runWindowAction(window.ereader.windowControls.toggleFullScreen);
-  }, [runWindowAction]);
-
-  useEffect(() => {
-    let cleanup: () => void = () => undefined;
-    window.ereader.windowControls.getState().then(applyState).catch(() => undefined);
-    cleanup = window.ereader.windowControls.onStateChanged(applyState);
-    return cleanup;
-  }, [applyState]);
-
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      const target = event.target as HTMLElement;
-      if (event.key === "F11") {
-        event.preventDefault();
-        toggleFullScreen();
-      }
-      if (event.key === "Escape" && isFullScreen && !target.closest("input, textarea")) {
-        event.preventDefault();
-        toggleFullScreen();
-      }
-    }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [isFullScreen, toggleFullScreen]);
+  const { isMaximized, isFullScreen, isBusy } = useWindowState();
+  const maximizeTitle = isFullScreen ? "请先退出阅读全屏" : isMaximized ? "还原窗口" : "最大化窗口";
 
   return (
     <div className="window-controls" aria-label="窗口控制">
-      <button type="button" onClick={() => window.ereader.windowControls.minimize()} title="最小化">
-        <Minus size={15} />
+      <button type="button" disabled={isBusy} onClick={() => window.ereader.windowControls.minimize().catch(() => undefined)} title="最小化" aria-label="最小化">
+        <Minus size={16} />
       </button>
       <button
         type="button"
-        onClick={toggleMaximize}
-        title={isMaximized ? "还原窗口" : "最大化窗口"}
+        disabled={isFullScreen || isBusy}
+        onClick={() => window.ereader.windowControls.toggleMaximize().catch(() => undefined)}
+        title={maximizeTitle}
+        aria-label={maximizeTitle}
       >
-        {isMaximized ? <SquareStack size={14} /> : <Square size={14} />}
+        {isMaximized ? <SquareStack size={16} /> : <Square size={16} />}
       </button>
-      <button
-        type="button"
-        onClick={toggleFullScreen}
-        title={isFullScreen ? "退出全屏 (F11)" : "系统全屏 (F11)"}
-      >
-        {isFullScreen ? <Shrink size={15} /> : <Fullscreen size={15} />}
-      </button>
-      <button type="button" className="close" onClick={() => window.ereader.windowControls.close()} title="关闭">
+      <button type="button" className="close" onClick={() => window.ereader.windowControls.close().catch(console.error)} title="关闭" aria-label="关闭">
         <X size={16} />
       </button>
     </div>

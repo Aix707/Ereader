@@ -10,7 +10,7 @@ const IMPORT_STATUS_LABELS: Record<ImportStatus, string> = {
 };
 
 export function isBookReady(book: BookItem) {
-  return book.importStatus === "ready" || !book.importStatus;
+  return (book.unitCount || 0) > 0 || book.importStatus === "ready" || !book.importStatus;
 }
 
 export function isImportInProgress(status?: ImportStatus | null) {
@@ -38,18 +38,22 @@ export function usesGeneratedTextCover(format: BookFormat) {
 }
 
 export function summarizeLibrary(books: BookItem[]) {
-  const readyBooks = books.filter((book) => isBookReady(book));
-  return {
+  const summary = {
     total: books.length,
-    ready: readyBooks.length,
-    recent: books.filter((book) => book.lastOpenedAt).length,
-    novels: books.filter((book) => book.contentType === "novel").length,
-    comics: books.filter((book) => book.contentType === "comic").length,
-    continueBook:
-      [...readyBooks]
-        .filter((book) => book.lastOpenedAt)
-        .sort((a, b) => new Date(b.lastOpenedAt || 0).getTime() - new Date(a.lastOpenedAt || 0).getTime())[0] || null
+    ready: 0, recent: 0, novels: 0, comics: 0,
+    continueBook: null as BookItem | null
   };
+  for (const book of books) {
+    const ready = isBookReady(book);
+    if (ready) summary.ready += 1;
+    if (book.contentType === "novel") summary.novels += 1;
+    if (book.contentType === "comic") summary.comics += 1;
+    if (book.lastOpenedAt) {
+      summary.recent += 1;
+      if (ready && book.lastOpenedAt > (summary.continueBook?.lastOpenedAt || "")) summary.continueBook = book;
+    }
+  }
+  return summary;
 }
 
 export function importStatusLabel(status?: string | null, labels: Partial<Record<ImportStatus, string>> = {}) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { BookItem, NovelReadingSettings, ReadingProgress, TextUnit } from "../../types";
 import { formatPercent } from "../../lib/format";
@@ -12,7 +12,6 @@ interface TextFlowReaderProps {
   showToc: boolean;
   novelSettings: NovelReadingSettings;
   onProgress: (progress: Partial<ReadingProgress>) => void;
-  onProgressLabel: (label: string) => void;
 }
 
 const VIRTUAL_OVERSCAN_UNITS = 36;
@@ -20,7 +19,7 @@ const TEXT_PAGE_HORIZONTAL_PADDING = 128;
 const TEXT_PAGE_BOTTOM_SAFETY = 180;
 type TextPageStyle = CssVariableStyle<"novel-paragraph-spacing" | "novel-page-width">;
 
-export function TextFlowReader({ book, showToc, novelSettings, onProgress, onProgressLabel }: TextFlowReaderProps) {
+export const TextFlowReader = memo(function TextFlowReader({ book, showToc, novelSettings, onProgress }: TextFlowReaderProps) {
   const [units, setUnits] = useState<TextUnit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -28,8 +27,10 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
   const viewportSize = useElementSize(containerRef, units.length);
   const restoredRef = useRef(false);
   const ignoreScrollProgressRef = useRef(false);
+  const scrollFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     restoredRef.current = false;
     setUnits([]);
     setError(null);
@@ -37,9 +38,14 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
     ignoreScrollProgressRef.current = false;
     window.ereader
       .getTextUnits(book.id)
-      .then(setUnits)
-      .catch((reason) => setError(String(reason)));
-  }, [book.id]);
+      .then((items) => { if (!cancelled) setUnits(items); })
+      .catch((reason) => { if (!cancelled) setError(String(reason)); });
+    return () => {
+      cancelled = true;
+      if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    };
+  }, [book.id, book.renditionVersion]);
 
   const headings = useMemo(
     () => units.filter((unit) => unit.type === "heading" && (unit.title || unit.text)).slice(0, 400),
@@ -121,28 +127,37 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
   useEffect(() => {
     const container = containerRef.current;
     if (!container || restoredRef.current || units.length === 0 || viewportSize.width <= 0 || viewportSize.height <= 0) return;
-    requestAnimationFrame(() => {
+    let releaseFrame = 0;
+    const restoreFrame = requestAnimationFrame(() => {
       const ratio = clampUnit(book.progress.scrollRatio ?? book.progress.percent);
       const nextScrollTop = ratio * Math.max(0, virtualHeight - container.clientHeight);
       ignoreScrollProgressRef.current = true;
       restoredRef.current = true;
       container.scrollTop = nextScrollTop;
       setScrollTop(nextScrollTop);
-      requestAnimationFrame(() => {
+      releaseFrame = requestAnimationFrame(() => {
         ignoreScrollProgressRef.current = false;
       });
     });
+    return () => {
+      cancelAnimationFrame(restoreFrame);
+      cancelAnimationFrame(releaseFrame);
+      ignoreScrollProgressRef.current = false;
+    };
   }, [book.progress.percent, book.progress.scrollRatio, units.length, viewportSize.height, viewportSize.width, virtualHeight]);
 
   function handleScroll() {
-    const container = containerRef.current;
-    if (!container) return;
-    setScrollTop(container.scrollTop);
-    const scrollable = Math.max(1, virtualHeight - container.clientHeight);
-    const ratio = clampUnit(container.scrollTop / scrollable);
-    onProgressLabel(formatPercent(ratio));
-    if (!restoredRef.current || ignoreScrollProgressRef.current) return;
-    onProgress({ kind: "scroll", scrollRatio: ratio, percent: ratio });
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const container = containerRef.current;
+      if (!container) return;
+      setScrollTop(container.scrollTop);
+      const scrollable = Math.max(1, virtualHeight - container.clientHeight);
+      const ratio = clampUnit(container.scrollTop / scrollable);
+      if (!restoredRef.current || ignoreScrollProgressRef.current) return;
+      onProgress({ kind: "scroll", scrollRatio: ratio, percent: ratio });
+    });
   }
 
   function scrollToRatio(ratio: number) {
@@ -256,9 +271,9 @@ export function TextFlowReader({ book, showToc, novelSettings, onProgress, onPro
       </div>
     </div>
   );
-}
+});
 
-function TextUnitBlock({ unit }: { unit: TextUnit }) {
+const TextUnitBlock = memo(function TextUnitBlock({ unit }: { unit: TextUnit }) {
   if (unit.type === "image" && unit.assetId) {
     return (
       <figure id={`unit-${unit.unitIndex}`} className="text-asset-figure">
@@ -288,7 +303,7 @@ function TextUnitBlock({ unit }: { unit: TextUnit }) {
       {unit.text}
     </p>
   );
-}
+});
 
 function AssetImage({ assetId, alt }: { assetId: number; alt: string }) {
   return <img src={window.ereader.getAssetUrl(assetId)} alt={alt} loading="lazy" />;

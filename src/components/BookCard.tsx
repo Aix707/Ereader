@@ -1,5 +1,5 @@
 import { CircleStop, FileText, Images, RefreshCw, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import type { BookItem, BookPatch } from "../types";
 import {
   canRebuildImport,
@@ -14,40 +14,58 @@ import { widthPercentStyle } from "../lib/style";
 
 interface BookCardProps {
   book: BookItem;
-  onOpen: () => void;
-  onRemove: () => Promise<void>;
-  onUpdateBook: (patch: BookPatch) => Promise<BookItem>;
-  onRebuild: () => Promise<void>;
-  onCancelImport: () => Promise<void>;
+  onOpen: (book: BookItem) => void;
+  onRemove: (id: string) => Promise<void>;
+  onUpdateBook: (id: string, patch: BookPatch) => Promise<BookItem>;
+  onRebuild: (id: string) => Promise<void>;
+  onCancelImport: (id: string) => Promise<void>;
 }
 
-export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCancelImport }: BookCardProps) {
+export const BookCard = memo(function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCancelImport }: BookCardProps) {
   const progress = formatPercent(book.progress.percent || 0);
   const importStatus = book.importStatus || "ready";
   const canOpen = isBookReady(book);
+  const processing = isImportInProgress(importStatus);
+  const summaryLabel = processing ? "处理中" : importStatus === "ready"
+    ? `${labelForContentType(book.contentType)}·${progress}`
+    : importStatusLabel(importStatus, { error: "处理失败" });
   const canToggleContent = canToggleContentType(book.format);
   const cardRef = useRef<HTMLElement>(null);
-  const [panelSide, setPanelSide] = useState<"left" | "right">("right");
+  const [panelPosition, setPanelPosition] = useState<{ left: number; top: number; maxHeight?: number }>({ left: 0, top: 0 });
   const lastReadText = book.lastOpenedAt ? `最近 ${formatRelativeDate(book.lastOpenedAt)}` : "尚未阅读";
 
   function updatePanelSide() {
     const rect = cardRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const panelWidth = 306;
-    const gap = 14;
-    const rightSpace = window.innerWidth - rect.right;
-    const leftSpace = rect.left;
-    setPanelSide(rightSpace < panelWidth + gap && leftSpace > rightSpace ? "left" : "right");
+    const panel = cardRef.current?.querySelector<HTMLElement>(".book-hover-panel");
+    const boundary = cardRef.current?.closest(".library-main")?.getBoundingClientRect();
+    if (!panel || !boundary) return;
+    const panelWidth = panel.offsetWidth, gap = 0;
+    const rightSpace = boundary.right - rect.right, leftSpace = rect.left - boundary.left;
+    const naturalHeight = panel.scrollHeight + 2;
+    if (rightSpace < panelWidth && leftSpace < panelWidth) {
+      const above = rect.top - 52, below = window.innerHeight - rect.bottom - 12;
+      const showBelow = below >= above;
+      const maxHeight = Math.min(naturalHeight, Math.max(80, showBelow ? below : above));
+      const left = Math.max(boundary.left + 8, Math.min(rect.left + (rect.width - panelWidth) / 2, boundary.right - panelWidth - 8));
+      setPanelPosition({ left: left - rect.left, top: showBelow ? rect.height : -maxHeight, maxHeight });
+      return;
+    }
+    const preferred = rightSpace < panelWidth + gap && leftSpace > rightSpace ? rect.left - panelWidth - gap : rect.right + gap;
+    const left = Math.max(boundary.left + 8, Math.min(preferred, boundary.right - panelWidth - 8));
+    const maxHeight = Math.min(naturalHeight, window.innerHeight - 64);
+    const top = Math.max(52, Math.min(rect.top, window.innerHeight - maxHeight - 12));
+    setPanelPosition({ left: left - rect.left, top: top - rect.top, maxHeight });
   }
 
   return (
     <article
       ref={cardRef}
-      className={`book-card panel-${panelSide} ${importStatus !== "ready" ? "has-import-state" : ""}`}
+      className="book-card"
       onFocus={updatePanelSide}
       onMouseEnter={updatePanelSide}
     >
-      <button className="book-open-area" onClick={onOpen} disabled={!canOpen} title={book.path}>
+      <button className="book-open-area" onClick={() => onOpen(book)} disabled={!canOpen} title={book.path}>
         <div className="book-cover-row">
           <BookCover book={book} progressRatio={book.progress.percent || 0} />
           <div className="book-title-rail">
@@ -55,26 +73,16 @@ export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCa
           </div>
         </div>
         <div className="book-card-summary">
-          <span className="book-summary-island">
-            <span>{labelForContentType(book.contentType)}</span>
-            <i aria-hidden="true" />
-            <span>{importStatusLabel(importStatus)}</span>
-            <i aria-hidden="true" />
-            <span>{progress}</span>
-          </span>
+          <span className={`book-summary-island ${importStatus}`}>{summaryLabel}</span>
         </div>
-        {importStatus !== "ready" && (
-          <div className="card-import-status">
-            <span>{importStatusLabel(importStatus)}</span>
-            <div className="mini-meter">
-              <i style={widthPercentStyle(book.importProgress || 0)} />
-            </div>
+        {processing && (
+          <div className="card-import-meter" role="progressbar" aria-label="导入进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((book.importProgress || 0) * 100)}>
+            <i style={widthPercentStyle(book.importProgress || 0)} />
           </div>
         )}
-        {book.importError && <p className="card-error">{book.importError}</p>}
       </button>
 
-      <div className="book-hover-panel" aria-label={`${book.title} 详情`}>
+      <div className="book-hover-panel" style={panelPosition} aria-label={`${book.title} 详情`}>
         <div className="book-hover-heading">
           <strong title={book.title}>{book.title}</strong>
           <span className={`status-pill ${importStatus}`}>{importStatusLabel(importStatus)}</span>
@@ -86,9 +94,10 @@ export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCa
           <span>模式</span>
           <strong>{labelForContentType(book.contentType)}</strong>
           <span>内容</span>
-          <strong>{book.unitCount || 0} 单元 · {book.assetCount || 0} 资产</strong>
+          <strong>{book.unitCount || 0} {book.contentType === "comic" || book.format === "pdf" ? "页" : "段"}</strong>
           <span>进度</span>
           <strong>{progress}</strong>
+          {processing && <><span>导入进度</span><strong>{formatPercent(book.importProgress || 0)}</strong></>}
           <span>阅读</span>
           <strong>{lastReadText}</strong>
           <span>源文件</span>
@@ -101,30 +110,30 @@ export function BookCard({ book, onOpen, onRemove, onUpdateBook, onRebuild, onCa
 
       <div className="card-floating-actions" aria-label={`${book.title} 操作`}>
         {isImportInProgress(importStatus) ? (
-          <button className="card-action-button left" onClick={onCancelImport} title="取消导入" aria-label="取消导入">
+          <button className="card-action-button left" onClick={() => onCancelImport(book.id).catch(() => undefined)} title="取消导入" aria-label="取消导入">
             <CircleStop size={16} />
           </button>
         ) : canRebuildImport(importStatus) ? (
-          <button className="card-action-button left" onClick={onRebuild} title="重建数据库内容" aria-label="重建数据库内容">
+          <button className="card-action-button left" onClick={() => onRebuild(book.id).catch(() => undefined)} title="重新处理" aria-label="重新处理">
             <RefreshCw size={16} />
           </button>
         ) : canToggleContent ? (
           <button
             className="card-action-button left"
-            onClick={() => onUpdateBook({ contentType: book.contentType === "novel" ? "comic" : "novel" })}
+            onClick={() => onUpdateBook(book.id, { contentType: book.contentType === "novel" ? "comic" : "novel" }).catch(() => undefined)}
             title={book.contentType === "novel" ? "切换为漫画模式" : "切换为小说模式"}
             aria-label={book.contentType === "novel" ? "切换为漫画模式" : "切换为小说模式"}
           >
             {book.contentType === "novel" ? <Images size={16} /> : <FileText size={16} />}
           </button>
         ) : null}
-        <button className="card-action-button right" onClick={onRemove} title="从书库移除" aria-label="从书库移除">
+        <button className="card-action-button right" onClick={() => onRemove(book.id).catch(() => undefined)} title="从书库移除" aria-label="从书库移除">
           <Trash2 size={16} />
         </button>
       </div>
     </article>
   );
-}
+});
 
 function BookCover({ book, progressRatio }: { book: BookItem; progressRatio: number }) {
   const assetUrl = book.coverAssetId ? window.ereader.getAssetUrl(book.coverAssetId) : null;
@@ -141,7 +150,7 @@ function BookCover({ book, progressRatio }: { book: BookItem; progressRatio: num
           {isTextCover ? (
             <>
               <strong>{book.title}</strong>
-              <p>{book.coverExcerpt || "本地文本阅读"}</p>
+              {book.coverExcerpt && <p>{book.coverExcerpt}</p>}
             </>
           ) : (
             <>

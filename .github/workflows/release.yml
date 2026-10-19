@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v1.0.0"
+        description: "Release tag, for example v2.0.0"
         required: true
-        default: "v1.0.0"
+        default: "v2.0.0"
 
 permissions:
   contents: write
@@ -35,14 +35,36 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.99.1"
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build renderer
         run: npm run build
 
+      - name: Verify imports and persistence
+        run: npm test
+
+      - name: Verify WebView2 imports
+        run: npm run test:desktop
+
+      - name: Verify fullscreen client bounds and restore
+        run: npm run test:window -- --skip-build
+
       - name: Package Windows installer
         run: npm run release:win
+
+      - name: Prepare source, standalone executable and checksums
+        run: npm run prepare:release
 
       - name: Prepare draft release
         id: release_context
@@ -50,7 +72,7 @@ jobs:
         with:
           script: |
             const tag = context.eventName === "workflow_dispatch"
-              ? core.getInput("tag")
+              ? context.payload.inputs.tag
               : context.ref.replace("refs/tags/", "");
             const { owner, repo } = context.repo;
             const releases = await github.paginate(github.rest.repos.listReleases, {
@@ -58,18 +80,12 @@ jobs:
               repo,
               per_page: 100
             });
-            for (const release of releases) {
-              if (release.draft && release.tag_name === tag) {
-                await github.rest.repos.deleteRelease({
-                  owner,
-                  repo,
-                  release_id: release.id
-                });
-              }
-            }
+            const published = releases.some(release => release.tag_name === tag && !release.draft);
+            core.setOutput("published", published ? "true" : "false");
             core.setOutput("tag", tag);
 
       - name: Upload draft release
+        if: steps.release_context.outputs.published != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release_context.outputs.tag }}
@@ -78,3 +94,6 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release/Ereader-*-Setup-x64.exe
+            release/Ereader.exe
+            release/Ereader-*-Source.zip
+            release/SHA256SUMS.txt

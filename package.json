@@ -1,82 +1,48 @@
 {
   "name": "ereader",
-  "version": "1.1.2",
+  "version": "2.0.0",
   "private": true,
   "author": "Aix707",
-  "description": "A local Windows reader for novels, manga, PDF, EPUB, TXT, and image folders.",
-  "main": "electron/main.cjs",
+  "description": "Lightweight local reader for Windows",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "tauri dev",
     "build": "tsc --noEmit && vite build",
+    "test": "vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:frontend": "vitest run",
+    "test:desktop": "node scripts/desktop-test.mjs",
+    "test:ui": "node scripts/ui-test.mjs",
+    "test:window": "node scripts/window-test.mjs",
+    "benchmark": "node scripts/native.mjs --benchmark",
     "preview": "vite preview --host 127.0.0.1",
-    "doctor": "electron scripts/doctor.cjs",
-    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
-    "clean:release": "node scripts/clean-release.cjs",
-    "package:win": "npm run clean:release && set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win nsis --x64 --publish never --config.npmRebuild=false",
-    "release:win": "npm run clean:release && electron-builder --win nsis --x64 --publish never"
+    "doctor": "node scripts/native.mjs --doctor",
+    "package:win": "tauri build --bundles nsis && node scripts/package-report.mjs",
+    "prepare:release": "node scripts/prepare-release.mjs",
+    "release:win": "npm run package:win",
+    "tauri": "tauri"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.100",
+    "@tauri-apps/api": "^2.10.1",
     "@zip.js/zip.js": "^2.8.26",
-    "better-sqlite3": "^12.11.1",
-    "chardet": "^2.1.0",
-    "fast-xml-parser": "^5.9.2",
-    "iconv-lite": "^0.6.3",
+    "chardet": "^2.1.1",
+    "dompurify": "^3.3.1",
     "lucide-react": "^0.468.0",
-    "node-html-parser": "^7.1.0",
-    "pdfjs-dist": "^4.9.155",
+    "pdfjs-dist": "4.10.38",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "sanitize-html": "^2.17.5",
-    "sharp": "^0.35.1"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.4",
+    "@pdf-lib/fontkit": "^1.1.1",
+    "@playwright/cli": "^0.1.22",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^40.10.4",
-    "electron-builder": "^26.15.3",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^26.1.0",
+    "pdf-lib": "^1.17.1",
     "typescript": "^5.7.2",
-    "vite": "^6.0.6"
-  },
-  "build": {
-    "appId": "com.aix707.ereader",
-    "productName": "Ereader",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "assets/**/*",
-      "package.json"
-    ],
-    "asar": true,
-    "asarUnpack": [
-      "**/*.node"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "assets/app-icon.png",
-      "artifactName": "${productName}-${version}-Setup-${arch}.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Ereader"
-    }
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
   }
 }

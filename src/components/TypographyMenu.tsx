@@ -15,6 +15,7 @@ export function TypographyMenu({ open, settings, onOpenChange, onChange }: Typog
   const [fonts, setFonts] = useState<SystemFontItem[]>([]);
   const [query, setQuery] = useState("");
   const [isLoadingFonts, setIsLoadingFonts] = useState(false);
+  const [fontsLoaded, setFontsLoaded] = useState(false);
   const [fontWasReset, setFontWasReset] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const dismiss = useCallback(() => onOpenChange(false), [onOpenChange]);
@@ -22,13 +23,17 @@ export function TypographyMenu({ open, settings, onOpenChange, onChange }: Typog
   useDismissablePopover(open, menuRef, dismiss);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || fontsLoaded) return;
     let cancelled = false;
     setIsLoadingFonts(true);
     window.ereader
       .listSystemFonts()
       .then((items) => {
-        if (!cancelled) setFonts(items);
+        if (!cancelled) {
+          setFonts(items);
+          setIsLoadingFonts(false);
+          setFontsLoaded(true);
+        }
       })
       .catch(() => {
         if (!cancelled) setFonts([]);
@@ -39,7 +44,7 @@ export function TypographyMenu({ open, settings, onOpenChange, onChange }: Typog
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [fontsLoaded, open]);
 
   const fontOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -58,10 +63,10 @@ export function TypographyMenu({ open, settings, onOpenChange, onChange }: Typog
   );
 
   useEffect(() => {
-    if (!open || isLoadingFonts || selectedFontExists || fontWasReset) return;
+    if (!open || !fontsLoaded || isLoadingFonts || selectedFontExists || fontWasReset) return;
     setFontWasReset(true);
     onChange({ fontFamily: "serif" });
-  }, [fontWasReset, isLoadingFonts, onChange, open, selectedFontExists]);
+  }, [fontsLoaded, fontWasReset, isLoadingFonts, onChange, open, selectedFontExists]);
 
   const filteredFonts = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -76,11 +81,12 @@ export function TypographyMenu({ open, settings, onOpenChange, onChange }: Typog
         onClick={() => onOpenChange(!open)}
         title="小说排版"
         aria-label="小说排版"
+        aria-expanded={open}
       >
         <Type size={16} />
       </button>
       {open && (
-        <div className="typography-popover">
+        <div className="typography-popover" role="dialog" aria-label="小说排版" data-ui-popover>
           <header>
             <strong>小说排版</strong>
             <span>{settings.fontSize}px · {settings.lineHeight.toFixed(2)}</span>

@@ -11,9 +11,9 @@ import {
   RefreshCw,
   TriangleAlert
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppSettings, StatsSummary } from "../types";
+import type { AppSettings, DiagnosticsSummary, StatsSummary } from "../types";
 import { globalBackgroundStyle } from "../lib/appearance";
 import { importStatusLabel, usesGeneratedTextCover } from "../lib/book";
 import { formatPercent, formatRelativeDate, labelForContentType, labelForFormat } from "../lib/format";
@@ -30,28 +30,53 @@ interface StatsViewProps {
 export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
   const [summary, setSummary] = useState<StatsSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  const [advanced, setAdvanced] = useState<DiagnosticsSummary | null>(null);
+  const requestVersion = useRef(0);
   const shellStyle = useMemo(() => globalBackgroundStyle(appSettings.appearance), [appSettings.appearance]);
   const handleTitlebarDoubleClick = useTitlebarDoubleClick("button, .window-controls");
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
+    const version = ++requestVersion.current;
     setError(null);
     try {
-      setSummary(await window.ereader.getStats());
+      const [nextSummary, nextAdvanced] = await Promise.all([
+        window.ereader.getStats(),
+        maintenanceOpen ? window.ereader.getDiagnostics() : Promise.resolve(null)
+      ]);
+      if (version !== requestVersion.current) return;
+      setSummary(nextSummary);
+      setAdvanced(nextAdvanced);
     } catch (reason) {
-      setError(String(reason));
+      if (version === requestVersion.current) setError(String(reason));
     }
-  }
+  }, [maintenanceOpen]);
 
   useEffect(() => {
     refresh();
-    const timer = window.setInterval(refresh, 2500);
-    return () => window.clearInterval(timer);
-  }, []);
+    let timer: number | undefined;
+    const scheduleRefresh = () => {
+      if (timer !== undefined || document.hidden) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        refresh();
+      }, 1000);
+    };
+    const unsubscribe = window.ereader.onImportStateChanged(scheduleRefresh);
+    window.addEventListener("focus", scheduleRefresh);
+    return () => {
+      requestVersion.current += 1;
+      window.clearTimeout(timer);
+      unsubscribe();
+      window.removeEventListener("focus", scheduleRefresh);
+    };
+  }, [refresh]);
 
   const maxDailyEvents = useMemo(
     () => Math.max(1, ...(summary?.activityByDay.map((item) => item.events) || [0])),
     [summary]
   );
+  const hasActivity = summary?.activityByDay.some((day) => day.events > 0);
 
   return (
     <main className="stats-shell" style={shellStyle}>
@@ -68,9 +93,7 @@ export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
 
       <header className="stats-header">
         <div>
-          <p className="eyebrow">Statistics</p>
-          <h1>你的阅读概览</h1>
-          <p>基于本地书库、阅读进度和最近活动生成。</p>
+          <h1>阅读概览</h1>
         </div>
         <button className="secondary-action compact" onClick={refresh}>
           <RefreshCw size={16} />
@@ -124,7 +147,7 @@ export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
             </section>
 
             <section className="stats-panel recent-panel">
-              <PanelTitle icon={<BookOpen size={17} />} title="最近阅读" aside="按最近打开排序" />
+              <PanelTitle icon={<BookOpen size={16} />} title="最近阅读" />
               {summary.recentBooks.length === 0 ? (
                 <p className="stats-empty-text">打开一本书后，这里会显示最近阅读记录。</p>
               ) : (
@@ -133,8 +156,10 @@ export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
                     <article className="recent-reading-item" key={book.id}>
                       <RecentBookCover book={book} />
                       <div>
-                        <strong>{book.title}</strong>
-                        <span>{labelForContentType(book.contentType)} · {labelForFormat(book.format)}</span>
+                        <div className="recent-reading-caption">
+                          <strong title={book.title}>{book.title}</strong>
+                          <span>{labelForContentType(book.contentType)}·{labelForFormat(book.format)}</span>
+                        </div>
                         <div className="mini-meter">
                           <i style={widthPercentStyle(book.progressPercent)} />
                         </div>
@@ -148,26 +173,28 @@ export function StatsView({ onBack, onRebuild, appSettings }: StatsViewProps) {
 
             <section className="stats-panel activity-panel">
               <PanelTitle icon={<ChartColumnIncreasing size={17} />} title="近 14 天活动" aside={`${summary.habits.activeDays30}/30 活跃天`} />
-              <div className="activity-chart" aria-label="近 14 天阅读活动">
-                {summary.activityByDay.map((day) => (
+              {hasActivity ? <div className="activity-chart" aria-label="近 14 天阅读活动">
+                {summary.activityByDay.map((day, index) => (
                   <div className="activity-day" key={day.day} title={`${day.day} · ${day.events} 次活动`}>
                     <span>
-                      <i style={heightPercentStyle(day.events / maxDailyEvents, day.events ? 12 : 3)} />
+                      <i style={heightPercentStyle(day.events / maxDailyEvents)} />
                     </span>
-                    <small>{formatDayLabel(day.day)}</small>
+                    <small>{[0, 6, summary.activityByDay.length - 1].includes(index) ? formatDayLabel(day.day) : ""}</small>
                   </div>
                 ))}
-              </div>
+              </div> : <p className="stats-empty-text">近14天暂无阅读活动</p>}
             </section>
 
             <section className="stats-panel preference-panel">
-              <PanelTitle icon={<ChartNoAxesCombined size={17} />} title="阅读偏好" aside="按书库占比" />
-              <DistributionList title="内容类型" items={summary.contentTypes} labelForKey={labelForContentType} />
-              <DistributionList title="文件格式" items={summary.formats} labelForKey={labelForFormat} />
+              <PanelTitle icon={<ChartNoAxesCombined size={16} />} title="阅读偏好" />
+              <div className="distribution-grid">
+                <DistributionList title="内容类型" items={summary.contentTypes} labelForKey={labelForContentType} />
+                <DistributionList title="文件格式" items={summary.formats} labelForKey={labelForFormat} />
+              </div>
             </section>
           </div>
 
-          <AdvancedMaintenance summary={summary} onRebuild={onRebuild} onRefresh={refresh} />
+          <AdvancedMaintenance advanced={advanced} onOpenChange={setMaintenanceOpen} onRebuild={onRebuild} onRefresh={refresh} />
         </section>
       )}
     </main>
@@ -178,7 +205,7 @@ function OverviewCard({ icon, label, value, hint }: { icon: ReactNode; label: st
   return (
     <article className="stats-overview-card">
       <div className="stats-card-icon">{icon}</div>
-      <span>{label}</span>
+      <span className="stats-card-label">{label}</span>
       <strong>{value}</strong>
       <em>{hint}</em>
     </article>
@@ -244,19 +271,20 @@ function DistributionList<T extends string>({
 }
 
 function AdvancedMaintenance({
-  summary,
+  advanced,
+  onOpenChange,
   onRebuild,
   onRefresh
 }: {
-  summary: StatsSummary;
+  advanced: DiagnosticsSummary | null;
+  onOpenChange: (open: boolean) => void;
   onRebuild: (bookId: string) => Promise<void>;
   onRefresh: () => Promise<void>;
 }) {
-  const advanced = summary.advanced;
-  const attentionBooks = advanced.books.filter((book) => book.importStatus !== "ready" || !book.sourceExists).slice(0, 8);
+  const attentionBooks = advanced?.books.filter((book) => book.importStatus !== "ready" || !book.sourceExists).slice(0, 8) || [];
 
   return (
-    <details className="stats-advanced">
+    <details className="stats-advanced" onToggle={(event) => onOpenChange(event.currentTarget.open)}>
       <summary>
         <span>
           <Database size={17} />
@@ -264,7 +292,7 @@ function AdvancedMaintenance({
         </span>
         <ChevronDown size={16} />
       </summary>
-      <div className="advanced-content">
+      {!advanced ? <div className="advanced-content">正在读取维护信息...</div> : <div className="advanced-content">
         <section className="diagnostic-panel">
           <h2>
             <Database size={17} />
@@ -317,7 +345,7 @@ function AdvancedMaintenance({
             ) : (
               advanced.recentDiagnostics.slice(0, 8).map((item) => (
                 <article key={item.id} className={`log-item ${item.level}`}>
-                  <strong>{item.level.toUpperCase()} · {item.title || "System"}</strong>
+                  <strong>{{ error: "错误", warning: "警告", info: "信息" }[item.level] || item.level} · {item.title || "系统"}</strong>
                   <span>{formatRelativeDate(item.createdAt)}</span>
                   <p>{item.message}</p>
                 </article>
@@ -325,7 +353,7 @@ function AdvancedMaintenance({
             )}
           </div>
         </section>
-      </div>
+      </div>}
     </details>
   );
 }
@@ -344,6 +372,7 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function formatFavorite(summary: StatsSummary) {
+  if (!summary.habits.favoriteContentType && !summary.habits.favoriteFormat) return "暂无阅读偏好";
   const type = summary.habits.favoriteContentType ? labelForContentType(summary.habits.favoriteContentType) : "暂无偏好";
   const format = summary.habits.favoriteFormat ? labelForFormat(summary.habits.favoriteFormat) : "暂无格式";
   return `${type} · ${format}`;

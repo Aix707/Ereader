@@ -1,80 +1,119 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { LibraryView } from "./components/LibraryView";
-import { ReaderView } from "./components/ReaderView";
-import { StatsView } from "./components/StatsView";
 import { DEFAULT_APP_SETTINGS } from "./types";
-import type { AppSettings, BookItem, LibraryStore } from "./types";
+import type { AppSettings, BookItem, ImportStateChange, LibraryStore } from "./types";
+import { getWindowSnapshot } from "./lib/window";
+
+const ReaderView = lazy(() => import("./components/ReaderView").then((module) => ({ default: module.ReaderView })));
+const StatsView = lazy(() => import("./components/StatsView").then((module) => ({ default: module.StatsView })));
 
 export function App() {
   const [store, setStore] = useState<LibraryStore>({ version: 1, books: [] });
-  const [activeBook, setActiveBook] = useState<BookItem | null>(null);
+  const [activeBookId, setActiveBookId] = useState<string | null>(null);
   const [screen, setScreen] = useState<"library" | "stats">("library");
   const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const refreshTimer = useRef<number | null>(null);
+  const refreshRequest = useRef<Promise<void> | null>(null);
+  const activeBook = store.books.find((book) => book.id === activeBookId);
+
+  useEffect(() => {
+    if (!activeBook) window.ereader.windowControls.setFullScreen(false).catch(() => undefined);
+    function handleKey(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
+      const state = getWindowSnapshot();
+      if (event.key === "F11") {
+        event.preventDefault();
+        if (activeBook && !event.repeat && !state.isBusy) {
+          window.ereader.windowControls.setFullScreen(!state.isFullScreen).catch(() => undefined);
+        }
+      } else if (event.key === "Escape" && activeBook && state.isFullScreen && !state.isBusy && !document.querySelector("[data-ui-popover]")) {
+        event.preventDefault();
+        window.ereader.windowControls.setFullScreen(false).catch(() => undefined);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [activeBook?.id]);
+
+  const leaveReader = useCallback(async () => {
+    try {
+      await window.ereader.windowControls.setFullScreen(false);
+      setActiveBookId(null);
+    } catch (reason) { setError(String(reason)); }
+  }, []);
+
+  const replaceBook = useCallback((updated: BookItem) => {
+    setStore((current) => {
+      const index = current.books.findIndex((book) => book.id === updated.id);
+      if (index < 0) return current;
+      const books = current.books.slice();
+      books[index] = updated;
+      if (index > 0 && (updated.lastOpenedAt || updated.addedAt) > (books[0].lastOpenedAt || books[0].addedAt)) {
+        books.splice(index, 1);
+        books.unshift(updated);
+      }
+      return { ...current, books };
+    });
+  }, []);
 
   const refreshLibrary = useCallback(() => {
-    if (refreshTimer.current) return;
-    refreshTimer.current = window.setTimeout(() => {
-      refreshTimer.current = null;
-      window.ereader.listLibrary().then(setStore).catch(() => undefined);
-    }, 200);
-  }, []);
-
-  useEffect(() => {
-    window.ereader
-      .listLibrary()
+    if (refreshRequest.current) return refreshRequest.current;
+    refreshRequest.current = window.ereader.listLibrary()
       .then(setStore)
       .catch((reason) => setError(String(reason)))
-      .finally(() => setIsLoading(false));
+      .finally(() => {
+        refreshRequest.current = null;
+        setIsLoading(false);
+      });
+    return refreshRequest.current;
+  }, []);
+
+  useEffect(() => {
+    function handleImportState(state: ImportStateChange) {
+      if (state.type === "queued" || state.type === "started" || state.type === "progress") {
+        const importStatus = state.type === "queued" ? "queued" : "processing";
+        setStore((current) => ({
+          ...current,
+          books: current.books.map((book) => book.id === state.bookId ? {
+            ...book, importStatus, importProgress: state.progress ?? 0, importError: null
+          } : book)
+        }));
+      } else {
+        window.ereader.getBook(state.bookId).then((book) => {
+          if (book) replaceBook(book);
+        }).catch((reason) => setError(String(reason)));
+      }
+    }
+    const unsubscribe = window.ereader.onImportStateChanged(handleImportState);
+    refreshLibrary();
     window.ereader.getAppSettings().then(setAppSettings).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    return window.ereader.onImportStateChanged(refreshLibrary);
-  }, [refreshLibrary]);
-
-  useEffect(() => {
+    window.addEventListener("focus", refreshLibrary);
     return () => {
-      if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+      unsubscribe();
+      window.removeEventListener("focus", refreshLibrary);
     };
+  }, [refreshLibrary, replaceBook]);
+
+  const runImport = useCallback(async (action: () => Promise<LibraryStore>) => {
+    setError(null);
+    try {
+      setStore(await action());
+    } catch (reason) {
+      setError(String(reason));
+    }
   }, []);
 
-  useEffect(() => {
-    const hasActiveImports = store.books.some((book) => isActiveImportStatus(book.importStatus));
-    if (!hasActiveImports) return;
-    const timer = window.setInterval(() => {
-      refreshLibrary();
-    }, 1200);
-    return () => window.clearInterval(timer);
-  }, [refreshLibrary, store.books]);
-
-  async function importFiles() {
-    setError(null);
-    setStore(await window.ereader.importFiles());
-  }
-
-  async function importFolder() {
-    setError(null);
-    setStore(await window.ereader.importFolder());
-  }
-
-  async function importDroppedPaths(paths: string[]) {
-    setError(null);
-    if (paths.length === 0) return;
-    setStore(await window.ereader.importDroppedPaths(paths));
-  }
+  const importFiles = useCallback(() => runImport(window.ereader.importFiles), [runImport]);
+  const importFolder = useCallback(() => runImport(window.ereader.importFolder), [runImport]);
+  const importDroppedPaths = useCallback((paths: string[]) =>
+    paths.length ? runImport(() => window.ereader.importDroppedPaths(paths)) : Promise.resolve(), [runImport]);
 
   const updateBook = useCallback(async (id: string, patch: Parameters<typeof window.ereader.updateBook>[1]) => {
     const updated = await window.ereader.updateBook(id, patch);
-    setStore((current) => ({
-      ...current,
-      books: current.books.map((book) => (book.id === id ? updated : book))
-    }));
-    setActiveBook((current) => (current?.id === id ? updated : current));
+    replaceBook(updated);
     return updated;
-  }, []);
+  }, [replaceBook]);
 
   const updateAppSettings = useCallback(async (patch: Partial<AppSettings>) => {
     const updated = await window.ereader.updateAppSettings(patch);
@@ -100,55 +139,51 @@ export function App() {
     return updated;
   }, []);
 
-  async function removeBook(id: string) {
+  const removeBook = useCallback(async (id: string) => {
     setStore(await window.ereader.removeBook(id));
-    setActiveBook((current) => (current?.id === id ? null : current));
-  }
+    setActiveBookId((current) => current === id ? null : current);
+  }, []);
 
-  async function rebuildBook(id: string) {
-    const updated = await window.ereader.rebuildBook(id);
-    setStore((current) => ({
-      ...current,
-      books: current.books.map((book) => (book.id === id ? updated : book))
-    }));
-  }
+  const rebuildBook = useCallback(async (id: string) => {
+    replaceBook(await window.ereader.rebuildBook(id));
+  }, [replaceBook]);
 
-  async function cancelImport(id: string) {
-    const updated = await window.ereader.cancelImport(id);
-    setStore((current) => ({
-      ...current,
-      books: current.books.map((book) => (book.id === id ? updated : book))
-    }));
-  }
+  const cancelImport = useCallback(async (id: string) => {
+    replaceBook(await window.ereader.cancelImport(id));
+  }, [replaceBook]);
 
-  async function openBook(book: BookItem) {
+  const openBook = useCallback(async (book: BookItem) => {
     try {
-      const updated = await updateBook(book.id, { lastOpenedAt: new Date().toISOString() });
-      setActiveBook(updated);
-    } catch {
-      setActiveBook(book);
+      await updateBook(book.id, { lastOpenedAt: new Date().toISOString() });
+      setActiveBookId(book.id);
+    } catch (reason) {
+      setError(String(reason));
     }
-  }
+  }, [updateBook]);
 
   if (activeBook) {
     return (
-      <ReaderView
-        book={activeBook}
-        onBack={() => setActiveBook(null)}
-        onUpdateBook={updateBook}
-        appSettings={appSettings}
-        onUpdateAppSettings={updateAppSettings}
-      />
+      <Suspense fallback={<div className="reader-loading">正在打开阅读器...</div>}>
+        <ReaderView
+          book={activeBook}
+          onBack={leaveReader}
+          onUpdateBook={updateBook}
+          appSettings={appSettings}
+          onUpdateAppSettings={updateAppSettings}
+        />
+      </Suspense>
     );
   }
 
   if (screen === "stats") {
     return (
-      <StatsView
-        onBack={() => setScreen("library")}
-        onRebuild={rebuildBook}
-        appSettings={appSettings}
-      />
+      <Suspense fallback={<div className="reader-loading">正在打开统计...</div>}>
+        <StatsView
+          onBack={() => setScreen("library")}
+          onRebuild={rebuildBook}
+          appSettings={appSettings}
+        />
+      </Suspense>
     );
   }
 
@@ -173,8 +208,4 @@ export function App() {
       onRemoveBackground={removeBackground}
     />
   );
-}
-
-function isActiveImportStatus(status?: string) {
-  return status === "queued" || status === "processing";
 }

@@ -4,15 +4,15 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Columns2,
+  Fullscreen,
   Images,
   PanelLeftOpen,
   PanelLeftClose,
-  RectangleHorizontal
+  RectangleHorizontal,
+  Shrink
 } from "lucide-react";
-import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTitlebarDoubleClick } from "../lib/ui";
-import { PageFlowReader } from "./readers/PageFlowReader";
-import { TextFlowReader } from "./readers/TextFlowReader";
 import { SegmentedControl } from "./SegmentedControl";
 import { TypographyMenu } from "./TypographyMenu";
 import { WindowControls } from "./WindowControls";
@@ -31,6 +31,7 @@ import type {
   ReadingProgress
 } from "../types";
 import { formatPercent, labelForContentType, labelForFormat } from "../lib/format";
+import { useWindowState } from "../lib/window";
 
 interface ReaderViewProps {
   book: BookItem;
@@ -41,18 +42,21 @@ interface ReaderViewProps {
 }
 
 const CHROME_REVEAL_TOP_ZONE = 92;
+const PageFlowReader = lazy(() => import("./readers/PageFlowReader").then((module) => ({ default: module.PageFlowReader })));
+const TextFlowReader = lazy(() => import("./readers/TextFlowReader").then((module) => ({ default: module.TextFlowReader })));
 const CHROME_REVEAL_BOTTOM_ZONE = 84;
 const CHROME_REVEAL_SIDE_ZONE = 96;
 
 export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAppSettings }: ReaderViewProps) {
   const [progressPercent, setProgressPercent] = useState(book.progress.percent || 0);
-  const [isFullScreen, setIsFullScreen] = useState(false);
+  const { isFullScreen, isBusy } = useWindowState();
   const [chromeVisible, setChromeVisible] = useState(true);
   const [showToc, setShowToc] = useState(true);
   const [typographyOpen, setTypographyOpen] = useState(false);
   const saveTimer = useRef<number | null>(null);
   const pendingProgress = useRef<Partial<ReadingProgress> | null>(null);
   const chromeTimer = useRef<number | null>(null);
+  const shellRef = useRef<HTMLElement>(null);
   const shellStyle = useMemo(() => globalBackgroundStyle(appSettings.appearance), [appSettings.appearance]);
 
   const persistProgress = useCallback(
@@ -79,13 +83,13 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
     (progress: Partial<ReadingProgress>) => {
       if (typeof progress.percent === "number") setProgressPercent(progress.percent);
       pendingProgress.current = progress;
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      if (saveTimer.current) return;
       saveTimer.current = window.setTimeout(() => {
         const nextProgress = pendingProgress.current;
         pendingProgress.current = null;
         saveTimer.current = null;
         if (nextProgress) persistProgress(nextProgress);
-      }, 350);
+      }, 500);
     },
     [persistProgress]
   );
@@ -97,10 +101,17 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
     }
   }, []);
 
-  const scheduleChromeHide = useCallback(() => {
+  const scheduleChromeHide = useCallback((): void => {
     if (!isFullScreen) return;
     clearChromeHideTimer();
-    chromeTimer.current = window.setTimeout(() => setChromeVisible(false), 1800);
+    chromeTimer.current = window.setTimeout(() => {
+      const shell = shellRef.current;
+      const active = document.activeElement;
+      const isInteracting = shell?.querySelector("[data-ui-popover],.reader-toolbar:hover,.reader-status:hover,.toc-panel:hover,.comic-thumbnail-panel:hover") ||
+        (active instanceof Element && active.matches(":focus-visible") && active !== document.body && shell?.contains(active));
+      if (isInteracting) scheduleChromeHide();
+      else setChromeVisible(false);
+    }, 1800);
   }, [clearChromeHideTimer, isFullScreen]);
 
   const revealChrome = useCallback(() => {
@@ -150,8 +161,6 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
     [appSettings.novelReading, onUpdateAppSettings]
   );
 
-  const ignoreProgressLabel = useCallback(() => undefined, []);
-
   const handleToolbarDoubleClick = useTitlebarDoubleClick("button, .segmented-control, .window-controls");
 
   useEffect(() => {
@@ -159,18 +168,15 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
   }, [book.id, book.progress.percent]);
 
   useEffect(() => {
+    window.addEventListener("blur", flushPendingProgress);
+    window.addEventListener("beforeunload", flushPendingProgress);
     return () => {
+      window.removeEventListener("blur", flushPendingProgress);
+      window.removeEventListener("beforeunload", flushPendingProgress);
       flushPendingProgress();
       clearChromeHideTimer();
     };
   }, [clearChromeHideTimer, flushPendingProgress]);
-
-  useEffect(() => {
-    let cleanup: () => void = () => undefined;
-    window.ereader.windowControls.getState().then((state) => setIsFullScreen(state.isFullScreen)).catch(() => undefined);
-    cleanup = window.ereader.windowControls.onStateChanged((state) => setIsFullScreen(state.isFullScreen));
-    return cleanup;
-  }, []);
 
   useEffect(() => {
     if (!isFullScreen) {
@@ -192,6 +198,7 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
 
   return (
     <main
+      ref={shellRef}
       className={`reader-shell${isFullScreen ? " fullscreen" : ""}${isFullScreen && !chromeVisible ? " chrome-hidden" : ""}`}
       style={shellStyle}
       onMouseMove={handleShellMouseMove}
@@ -203,7 +210,7 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
       >
         <div className="reader-left-tools">
           <div className="topbar-title-island reader-title" title={`${book.title} · ${labelForFormat(book.format)} · ${labelForContentType(book.contentType)}`}>
-            <button className="topbar-island-button" onClick={onBack} title="返回书架" aria-label="返回书架">
+            <button className="topbar-island-button" onClick={onBack} title="返回书架" aria-label="返回书架" disabled={isBusy}>
               <ArrowLeft size={17} />
             </button>
             <h1>{book.title}</h1>
@@ -251,15 +258,27 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
               onChange={updateNovelReading}
             />
           )}
+          <button
+            className={`toolbar-button${isFullScreen ? " active" : ""}`}
+            disabled={isBusy}
+            onClick={(event) => {
+              event.currentTarget.blur();
+              window.ereader.windowControls.setFullScreen(!isFullScreen).catch(() => undefined);
+            }}
+            title={isFullScreen ? "退出阅读全屏 (F11)" : "阅读全屏 (F11)"}
+            aria-label={isFullScreen ? "退出阅读全屏 (F11)" : "阅读全屏 (F11)"}
+          >
+            {isFullScreen ? <Shrink size={16} /> : <Fullscreen size={16} />}
+          </button>
           <WindowControls />
         </div>
       </header>
 
-      <section className="reader-stage">
+      <section className="reader-stage"><Suspense fallback={<div className="reader-loading">正在载入内容...</div>}>
         {!isReady ? (
           <div className="reader-processing">
             <h2>{book.importStatus === "error" ? "处理失败" : "正在处理导入内容"}</h2>
-            <p>{book.importError || "导入内容会写入 SQLite 数据库，完成后即可阅读。"}</p>
+            <p>{book.importError || "处理完成后即可阅读。"}</p>
             <div className="processing-meter">
               <span style={widthPercentStyle(book.importProgress || 0)} />
             </div>
@@ -269,7 +288,6 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
             book={book}
             showThumbnails={sidePanelVisible}
             onProgress={saveProgress}
-            onProgressLabel={ignoreProgressLabel}
           />
         ) : (
           <TextFlowReader
@@ -277,10 +295,9 @@ export function ReaderView({ book, onBack, onUpdateBook, appSettings, onUpdateAp
             showToc={sidePanelVisible}
             novelSettings={appSettings.novelReading}
             onProgress={saveProgress}
-            onProgressLabel={ignoreProgressLabel}
           />
         )}
-      </section>
+      </Suspense></section>
 
       {isReady && (
         <footer className="reader-status">

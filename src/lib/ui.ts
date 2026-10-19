@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import type { MouseEvent, RefObject } from "react";
+import { getWindowSnapshot, interactiveSelector } from "./window";
 
 export function useDismissablePopover(
   open: boolean,
@@ -13,13 +14,18 @@ export function useDismissablePopover(
       onDismiss();
     }
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onDismiss();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onDismiss();
+        ref.current?.querySelector("button")?.focus();
+      }
     }
     window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [onDismiss, open, ref]);
 }
@@ -28,13 +34,10 @@ export function useTitlebarDoubleClick(ignoreSelector: string) {
   return useCallback(
     (event: MouseEvent<HTMLElement>) => {
       const target = event.target as HTMLElement;
-      if (target.closest(ignoreSelector)) return;
-      window.ereader.windowControls
-        .getState()
-        .then((state) => state.isFullScreen
-          ? window.ereader.windowControls.toggleFullScreen()
-          : window.ereader.windowControls.toggleMaximize())
-        .catch(() => undefined);
+      if (target.closest(`${interactiveSelector},${ignoreSelector}`)) return;
+      const state = getWindowSnapshot();
+      if (state.isFullScreen || state.isBusy) return;
+      window.ereader.windowControls.toggleMaximize().catch(() => undefined);
     },
     [ignoreSelector]
   );

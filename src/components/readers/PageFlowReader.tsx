@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, WheelEvent } from "react";
 import {
   clampAndAlignIndex,
@@ -20,13 +20,11 @@ interface PageFlowReaderProps {
   book: BookItem;
   showThumbnails: boolean;
   onProgress: (progress: Partial<ReadingProgress>) => void;
-  onProgressLabel: (label: string) => void;
 }
 
-const PRELOAD_SPREAD_RADIUS = 2;
-const HIDDEN_PRELOAD_SPREAD_RADIUS = 1;
-const DECODE_CACHE_MAX_ASSETS = 18;
-const DECODE_CACHE_MAX_BYTES = 128 * 1024 * 1024;
+const PRELOAD_SPREAD_RADIUS = 1;
+const DECODE_CACHE_MAX_ASSETS = 8;
+const DECODE_CACHE_MAX_BYTES = 96 * 1024 * 1024;
 const WHEEL_PAGE_THRESHOLD = 48;
 const WHEEL_COOLDOWN_MS = 180;
 const THUMBNAIL_OVERSCAN_ITEMS = 8;
@@ -38,6 +36,7 @@ const COMIC_LAYOUT = {
   thumbnailWidth: 128,
   thumbnailBottomReserve: 58,
   thumbnailItemHeight: 112,
+  thumbnailGap: 8,
   safeGap: 12,
   pageTurnLeft: 18,
   pageTurnWidth: 42
@@ -48,16 +47,13 @@ const CONTENT_SAFE_LEFT_WITH_THUMBNAILS =
 
 interface DecodeCacheEntry {
   image: HTMLImageElement;
-  url: string;
   byteLength: number;
-  decoded: boolean;
   lastUsed: number;
-  promise?: Promise<void>;
 }
 
 type ComicCssVariables = CssVariableStyle<`comic-${string}`>;
 
-export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLabel }: PageFlowReaderProps) {
+export const PageFlowReader = memo(function PageFlowReader({ book, showThumbnails, onProgress }: PageFlowReaderProps) {
   const [pages, setPages] = useState<PageUnit[]>([]);
   const [currentIndex, setCurrentIndex] = useState(() => pageIndexFromProgress(book.progress));
   const [isJumping, setIsJumping] = useState(false);
@@ -73,19 +69,24 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
   const readerSize = useElementSize(readerRef, pages.length);
 
   useEffect(() => {
+    let cancelled = false;
     setError(null);
     setPages([]);
     setCurrentIndex(pageIndexFromProgress(book.progress));
     setIsJumping(false);
     didRestoreProgressRef.current = false;
-    decodeCacheRef.current.clear();
+    clearDecodeCache(decodeCacheRef.current);
     wheelDeltaRef.current = 0;
     lastWheelDirectionRef.current = 0;
     window.ereader
       .getPageUnits(book.id)
-      .then(setPages)
-      .catch((reason) => setError(String(reason)));
-  }, [book.id]);
+      .then((items) => { if (!cancelled) setPages(items); })
+      .catch((reason) => { if (!cancelled) setError(String(reason)); });
+    return () => {
+      cancelled = true;
+      clearDecodeCache(decodeCacheRef.current);
+    };
+  }, [book.id, book.renditionVersion]);
 
   const spreadSize = book.preferences.pageSpread === "double" ? 2 : 1;
   const lastSpreadStart = useMemo(
@@ -98,12 +99,6 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
     return book.preferences.readingDirection === "rtl" ? [...spread].reverse() : spread;
   }, [book.preferences.readingDirection, currentIndex, pages, spreadSize]);
 
-  const hiddenPreloadPages = useMemo(() => {
-    const visibleIds = new Set(visiblePages.map((page) => page.id));
-    return pageIndexesForPreload(currentIndex, spreadSize, pages.length, HIDDEN_PRELOAD_SPREAD_RADIUS)
-      .map((index) => pages[index])
-      .filter((page): page is PageUnit => Boolean(page) && !visibleIds.has(page.id));
-  }, [currentIndex, pages, spreadSize, visiblePages]);
   const activePageIndexes = useMemo(
     () => new Set(pageIndexesForSpread(currentIndex, spreadSize, pages.length)),
     [currentIndex, pages.length, spreadSize]
@@ -113,11 +108,13 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
     (targetIndex: number, radius = PRELOAD_SPREAD_RADIUS) => {
       if (!pages.length) return;
       const cache = decodeCacheRef.current;
-      const protectedAssetIds = new Set<number>();
-      for (const index of pageIndexesForPreload(targetIndex, spreadSize, pages.length, radius)) {
+      const protectedAssetIds = new Set(pageIndexesForSpread(targetIndex, spreadSize, pages.length)
+        .map((index) => pages[index].assetId));
+      const indexes = pageIndexesForPreload(targetIndex, spreadSize, pages.length, radius)
+        .sort((left, right) => Math.abs(right - targetIndex) - Math.abs(left - targetIndex));
+      for (const index of indexes) {
         const page = pages[index];
         if (!page?.assetId) continue;
-        protectedAssetIds.add(page.assetId);
         warmDecodePage(cache, page);
       }
       pruneDecodeCache(cache, protectedAssetIds);
@@ -128,10 +125,9 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
   const goToIndex = useCallback(
     (targetIndex: number) => {
       const nextIndex = clampAndAlignIndex(targetIndex, pages.length, spreadSize);
-      preloadAroundIndex(nextIndex);
       setCurrentIndex(nextIndex);
     },
-    [pages.length, preloadAroundIndex, spreadSize]
+    [pages.length, spreadSize]
   );
 
   const goNext = useCallback(() => {
@@ -207,10 +203,9 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
     if (!pages.length) return;
     setCurrentIndex((index) => {
       const nextIndex = clampAndAlignIndex(index, pages.length, spreadSize);
-      preloadAroundIndex(nextIndex);
       return nextIndex;
     });
-  }, [pages.length, preloadAroundIndex, spreadSize]);
+  }, [pages.length, spreadSize]);
 
   const fullPageBounds = useMemo(
     () => comicPageBounds(readerSize, visiblePages.length),
@@ -236,20 +231,20 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
     if (!pages.length) return;
     const page = Math.min(currentIndex + 1, pages.length);
     const percent = pages.length <= 1 ? 1 : currentIndex / (pages.length - 1);
-    onProgressLabel(`${page}/${pages.length}`);
     if (!didRestoreProgressRef.current) {
       didRestoreProgressRef.current = true;
       return;
     }
     onProgress({ kind: "page", page, totalPages: pages.length, percent });
-  }, [currentIndex, pages.length, onProgress, onProgressLabel]);
+  }, [currentIndex, pages.length, onProgress]);
 
   useEffect(() => {
     if (!isJumping) return;
-    window.requestAnimationFrame(() => {
+    const frame = window.requestAnimationFrame(() => {
       jumpInputRef.current?.focus();
       jumpInputRef.current?.select();
     });
+    return () => window.cancelAnimationFrame(frame);
   }, [isJumping]);
 
   useEffect(() => {
@@ -286,7 +281,7 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
         />
       )}
       <div ref={readerRef} className="comic-reader" onWheel={handleWheel}>
-        <button className="page-turn left" onClick={goPrevious} disabled={currentIndex <= 0}>
+        <button className="page-turn left" onClick={goPrevious} disabled={currentIndex <= 0} title="上一页" aria-label="上一页">
           <ChevronLeft size={22} />
         </button>
         <div className={`comic-pages ${visiblePages.length > 1 ? "double-spread" : "single-spread"}`}>
@@ -294,21 +289,10 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
             <PageImage key={page.id} page={page} maxWidth={pageBounds.width} maxHeight={pageBounds.height} />
           ))}
         </div>
-        <div className="comic-preload-layer" aria-hidden="true">
-          {hiddenPreloadPages.map((page) => (
-            <img
-              key={page.id}
-              src={window.ereader.getAssetUrl(page.assetId)}
-              alt=""
-              loading="eager"
-              decoding="async"
-            />
-          ))}
-        </div>
-        <button className="page-turn right" onClick={goNext} disabled={currentIndex >= lastSpreadStart}>
+        <button className="page-turn right" onClick={goNext} disabled={currentIndex >= lastSpreadStart} title="下一页" aria-label="下一页">
           <ChevronRight size={22} />
         </button>
-        <div className="floating-page-indicator">
+        <div className="floating-page-indicator" data-ui-popover={isJumping || undefined}>
           {isJumping ? (
             <input
               ref={jumpInputRef}
@@ -320,7 +304,7 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
               aria-label="跳转页码"
             />
           ) : (
-            <button type="button" onClick={openPageJump} title="跳转页码">
+            <button type="button" onClick={openPageJump} title="跳转页码" aria-label="跳转页码">
               {currentIndex + 1}/{pages.length}
             </button>
           )}
@@ -328,7 +312,7 @@ export function PageFlowReader({ book, showThumbnails, onProgress, onProgressLab
       </div>
     </div>
   );
-}
+});
 
 function PageImage({ page, maxWidth, maxHeight }: { page: PageUnit; maxWidth: number; maxHeight: number }) {
   const displaySize = useMemo(
@@ -349,7 +333,7 @@ function PageImage({ page, maxWidth, maxHeight }: { page: PageUnit; maxWidth: nu
         <img
           className="comic-image"
           src={window.ereader.getAssetUrl(page.assetId)}
-          alt={page.title || `Page ${page.unitIndex + 1}`}
+          alt={page.title || `第${page.unitIndex + 1}页`}
           width={page.width || undefined}
           height={page.height || undefined}
           loading="eager"
@@ -375,18 +359,19 @@ function ComicThumbnailPanel({
 }) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const [renderRange, setRenderRange] = useState({ start: 0, end: 28 });
+  const itemStride = COMIC_LAYOUT.thumbnailItemHeight + COMIC_LAYOUT.thumbnailGap;
 
   const updateRenderRange = useCallback(() => {
     const element = listRef.current;
     if (!element) return;
     const start = Math.max(
       0,
-      Math.floor(element.scrollTop / COMIC_LAYOUT.thumbnailItemHeight) - THUMBNAIL_OVERSCAN_ITEMS
+      Math.floor(element.scrollTop / itemStride) - THUMBNAIL_OVERSCAN_ITEMS
     );
-    const visible = Math.ceil(element.clientHeight / COMIC_LAYOUT.thumbnailItemHeight) + THUMBNAIL_OVERSCAN_ITEMS * 2;
+    const visible = Math.ceil(element.clientHeight / itemStride) + THUMBNAIL_OVERSCAN_ITEMS * 2;
     const end = Math.min(pages.length - 1, start + visible);
     setRenderRange((current) => (current.start === start && current.end === end ? current : { start, end }));
-  }, [pages.length]);
+  }, [itemStride, pages.length]);
 
   useEffect(() => {
     updateRenderRange();
@@ -399,10 +384,13 @@ function ComicThumbnailPanel({
 
   useEffect(() => {
     const element = listRef.current;
-    const target = element?.querySelector<HTMLElement>(`[data-page-index="${currentIndex}"]`);
-    target?.scrollIntoView({ block: "nearest" });
-    window.requestAnimationFrame(updateRenderRange);
-  }, [currentIndex, updateRenderRange]);
+    if (!element) return;
+    const top = currentIndex * itemStride;
+    const bottom = top + COMIC_LAYOUT.thumbnailItemHeight + COMIC_LAYOUT.thumbnailGap * 2;
+    if (top < element.scrollTop) element.scrollTop = top;
+    else if (bottom > element.scrollTop + element.clientHeight) element.scrollTop = bottom - element.clientHeight;
+    updateRenderRange();
+  }, [currentIndex, itemStride, updateRenderRange]);
 
   return (
     <aside className="toc-panel comic-thumbnail-panel">
@@ -411,26 +399,28 @@ function ComicThumbnailPanel({
         <span>{pages.length} 页</span>
       </div>
       <div ref={listRef} className="comic-thumbnail-list" onScroll={updateRenderRange}>
-        {pages.map((page, index) => {
-          const shouldLoad =
-            (index >= renderRange.start && index <= renderRange.end) || Math.abs(index - currentIndex) <= 5;
-          return (
-            <button
-              key={page.id}
-              className={activePageIndexes.has(index) ? "active" : ""}
-              data-page-index={index}
-              onClick={() => onSelect(index)}
-              title={`第 ${index + 1} 页`}
-            >
-              <span className="comic-thumbnail-card">
-                <span className="comic-thumbnail-frame">
-                  {shouldLoad ? <ThumbnailImage page={page} /> : <i />}
+        <div className="comic-thumbnail-window" style={{ height: Math.max(0, pages.length * itemStride - COMIC_LAYOUT.thumbnailGap) }}>
+          {pages.slice(renderRange.start, renderRange.end + 1).map((page, offset) => {
+            const index = renderRange.start + offset;
+            return (
+              <button
+                key={page.id}
+                className={activePageIndexes.has(index) ? "active" : ""}
+                data-page-index={index}
+                style={{ top: index * itemStride, height: COMIC_LAYOUT.thumbnailItemHeight }}
+                onClick={() => onSelect(index)}
+                title={`第 ${index + 1} 页`}
+              >
+                <span className="comic-thumbnail-card">
+                  <span className="comic-thumbnail-frame">
+                    <ThumbnailImage page={page} />
+                  </span>
+                  <strong>{index + 1}</strong>
                 </span>
-                <strong>{index + 1}</strong>
-              </span>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </aside>
   );
@@ -500,31 +490,22 @@ function warmDecodePage(cache: Map<number, DecodeCacheEntry>, page: PageUnit) {
   image.decoding = "async";
   const entry: DecodeCacheEntry = {
     image,
-    url,
-    byteLength: page.byteLength || 0,
-    decoded: false,
+    byteLength: Math.max(page.byteLength || 0, page.width * page.height * 4),
     lastUsed: now
   };
   cache.set(page.assetId, entry);
-  entry.promise = decodeImage(image, url)
-    .then(() => {
-      entry.decoded = true;
-      entry.lastUsed = Date.now();
-    })
-    .catch(() => undefined)
-    .finally(() => {
-      entry.promise = undefined;
-    });
+  decodeImage(image, url).catch(() => undefined);
 }
 
 function decodeImage(image: HTMLImageElement, url: string) {
-  image.src = url;
   if (typeof image.decode === "function") {
+    image.src = url;
     return image.decode();
   }
   return new Promise<void>((resolve) => {
     image.onload = () => resolve();
     image.onerror = () => resolve();
+    image.src = url;
   });
 }
 
@@ -538,6 +519,18 @@ function pruneDecodeCache(cache: Map<number, DecodeCacheEntry>, protectedAssetId
       .sort((left, right) => left[1].lastUsed - right[1].lastUsed)[0];
     if (!candidate) break;
     cache.delete(candidate[0]);
+    releaseDecodedImage(candidate[1]);
     totalBytes -= candidate[1].byteLength;
   }
+}
+
+function releaseDecodedImage(entry: DecodeCacheEntry) {
+  entry.image.onload = null;
+  entry.image.onerror = null;
+  entry.image.removeAttribute("src");
+}
+
+function clearDecodeCache(cache: Map<number, DecodeCacheEntry>) {
+  for (const entry of cache.values()) releaseDecodedImage(entry);
+  cache.clear();
 }

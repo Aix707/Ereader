@@ -1,0 +1,4 @@
+[http]
+# Avoid stalled HTTP/2 transfers on networks that proxy crates.io.
+multiplexing = false
+timeout = 30

@@ -8,7 +8,7 @@ interface SegmentedControlProps {
 
 export function SegmentedControl({ value, options, onChange }: SegmentedControlProps) {
   return (
-    <div className="segmented-control">
+    <div className="segmented-control" role="group" aria-label={options.map((option) => option.label).join("、")}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -16,6 +16,7 @@ export function SegmentedControl({ value, options, onChange }: SegmentedControlP
           onClick={() => onChange(option.value)}
           title={option.label}
           aria-label={option.label}
+          aria-pressed={option.value === value}
         >
           {option.icon}
         </button>

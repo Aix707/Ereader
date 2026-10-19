@@ -34,7 +34,7 @@ export function pageIndexFromProgress(progress: ReadingProgress) {
 
 export function clampAndAlignIndex(index: number, totalPages: number, spreadSize: number) {
   if (totalPages <= 0) return 0;
-  const clamped = Math.max(0, Math.min(totalPages - 1, index));
+  const clamped = Math.max(0, Math.min(totalPages - 1, Number.isFinite(index) ? Math.trunc(index) : 0));
   return Math.max(0, Math.min(totalPages - 1, alignToSpreadStart(clamped, spreadSize)));
 }
 
@@ -50,33 +50,32 @@ export function pageIndexesForSpread(startIndex: number, spreadSize: number, tot
 }
 
 export function lastSpreadStartIndex(totalPages: number, spreadSize: number) {
-  const starts = spreadStarts(totalPages, spreadSize);
-  return starts[starts.length - 1] || 0;
+  return clampAndAlignIndex(totalPages - 1, totalPages, spreadSize);
 }
 
 export function nextSpreadStart(currentIndex: number, totalPages: number, spreadSize: number) {
-  const starts = spreadStarts(totalPages, spreadSize);
+  if (totalPages <= 0) return 0;
   const current = clampAndAlignIndex(currentIndex, totalPages, spreadSize);
-  const position = Math.max(0, starts.indexOf(current));
-  return starts[Math.min(starts.length - 1, position + 1)] || current;
+  const next = spreadSize <= 1 || current === 0 ? current + 1 : current + spreadSize;
+  return Math.min(lastSpreadStartIndex(totalPages, spreadSize), next);
 }
 
 export function previousSpreadStart(currentIndex: number, spreadSize: number) {
-  if (spreadSize <= 1) return currentIndex - 1;
-  if (currentIndex <= 1) return 0;
-  return currentIndex - spreadSize;
+  const current = alignToSpreadStart(Math.max(0, Math.trunc(currentIndex) || 0), spreadSize);
+  return Math.max(0, current - Math.max(1, spreadSize));
 }
 
 export function pageIndexesForPreload(centerIndex: number, spreadSize: number, totalPages: number, radius: number) {
   if (totalPages <= 0) return [];
   const indexes = new Set<number>();
-  const starts = spreadStarts(totalPages, spreadSize);
   const spreadStart = clampAndAlignIndex(centerIndex, totalPages, spreadSize);
-  const currentPosition = Math.max(0, starts.indexOf(spreadStart));
+  const currentPosition = spreadSize <= 1 ? spreadStart : spreadStart === 0 ? 0 : 1 + (spreadStart - 1) / spreadSize;
+  const spreadCount = spreadSize <= 1 ? totalPages : 1 + Math.ceil((totalPages - 1) / spreadSize);
   const startPosition = Math.max(0, currentPosition - radius);
-  const endPosition = Math.min(starts.length - 1, currentPosition + radius);
+  const endPosition = Math.min(spreadCount - 1, currentPosition + radius);
   for (let position = startPosition; position <= endPosition; position += 1) {
-    for (const index of pageIndexesForSpread(starts[position], spreadSize, totalPages)) indexes.add(index);
+    const start = spreadSize <= 1 ? position : position === 0 ? 0 : 1 + (position - 1) * spreadSize;
+    for (const index of pageIndexesForSpread(start, spreadSize, totalPages)) indexes.add(index);
   }
   return [...indexes].sort((left, right) => left - right);
 }
@@ -84,14 +83,4 @@ export function pageIndexesForPreload(centerIndex: number, spreadSize: number, t
 function alignToSpreadStart(index: number, spreadSize: number) {
   if (spreadSize <= 1 || index <= 0) return Math.max(0, index);
   return Math.max(1, 1 + Math.floor((index - 1) / spreadSize) * spreadSize);
-}
-
-function spreadStarts(totalPages: number, spreadSize: number) {
-  if (totalPages <= 0) return [];
-  if (spreadSize <= 1) return Array.from({ length: totalPages }, (_, index) => index);
-  const starts = [0];
-  for (let index = 1; index < totalPages; index += spreadSize) {
-    starts.push(index);
-  }
-  return starts;
 }

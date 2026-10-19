@@ -32,11 +32,12 @@ export function AppearanceSettingsMenu({
         onClick={() => setOpen((value) => !value)}
         title="外观设置"
         aria-label="外观设置"
+        aria-expanded={open}
       >
         <Settings size={16} />
       </button>
       {open && (
-        <div className="appearance-settings-popover">
+        <div className="appearance-settings-popover" role="dialog" aria-label="外观设置" data-ui-popover>
           <header>
             <strong>外观设置</strong>
             <span>{Math.round(backgroundOpacity * 100)}%</span>

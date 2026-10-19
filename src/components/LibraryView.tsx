@@ -12,8 +12,7 @@ import {
   Search,
   X
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import type { DragEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AppSettings, BookItem, BookPatch, LibraryStore } from "../types";
 import { globalBackgroundStyle } from "../lib/appearance";
 import { summarizeLibrary } from "../lib/book";
@@ -43,7 +42,6 @@ interface LibraryViewProps {
   onResetBackground: () => Promise<AppSettings>;
   onRemoveBackground: () => Promise<AppSettings>;
 }
-
 export function LibraryView({
   store,
   isLoading,
@@ -66,25 +64,19 @@ export function LibraryView({
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
   const [isDragActive, setIsDragActive] = useState(false);
-  const dragDepth = useRef(0);
+  useEffect(() => window.ereader.onNativeDrop((event) => {
+    setIsDragActive(event.type === "enter");
+    if (event.type === "drop") onImportDroppedPaths(event.paths).catch(() => undefined);
+  }), [onImportDroppedPaths]);
 
   const books = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return [...store.books]
+    return store.books
       .filter((book) => {
-        if (filter === "recent") return Boolean(book.lastOpenedAt);
-        if (filter === "novel") return book.contentType === "novel";
-        if (filter === "comic") return book.contentType === "comic";
-        return true;
-      })
-      .filter((book) => {
-        if (!normalizedQuery) return true;
-        return `${book.title} ${book.path}`.toLowerCase().includes(normalizedQuery);
-      })
-      .sort((a, b) => {
-        const left = new Date(a.lastOpenedAt || a.addedAt).getTime();
-        const right = new Date(b.lastOpenedAt || b.addedAt).getTime();
-        return right - left;
+        if (filter === "recent" && !book.lastOpenedAt) return false;
+        if (filter === "novel" && book.contentType !== "novel") return false;
+        if (filter === "comic" && book.contentType !== "comic") return false;
+        return !normalizedQuery || `${book.title} ${book.path}`.toLowerCase().includes(normalizedQuery);
       });
   }, [filter, query, store.books]);
 
@@ -93,45 +85,10 @@ export function LibraryView({
   const shellStyle = useMemo(() => globalBackgroundStyle(appSettings.appearance), [appSettings.appearance]);
   const handleTitlebarDoubleClick = useTitlebarDoubleClick("button, .window-controls");
 
-  function handleDragEnter(event: DragEvent<HTMLElement>) {
-    if (!hasDraggedFiles(event)) return;
-    event.preventDefault();
-    dragDepth.current += 1;
-    setIsDragActive(true);
-  }
-
-  function handleDragOver(event: DragEvent<HTMLElement>) {
-    if (!hasDraggedFiles(event)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  }
-
-  function handleDragLeave(event: DragEvent<HTMLElement>) {
-    if (!hasDraggedFiles(event)) return;
-    event.preventDefault();
-    dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) setIsDragActive(false);
-  }
-
-  function handleDrop(event: DragEvent<HTMLElement>) {
-    if (!hasDraggedFiles(event)) return;
-    event.preventDefault();
-    dragDepth.current = 0;
-    setIsDragActive(false);
-    const paths = Array.from(event.dataTransfer.files)
-      .map((file) => (file as File & { path?: string }).path)
-      .filter((path): path is string => Boolean(path));
-    onImportDroppedPaths(paths).catch(() => undefined);
-  }
-
   return (
     <main
       className={`app-shell${isDragActive ? " drag-active" : ""}`}
       style={shellStyle}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
     >
       <header className="app-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
         <div className="app-titlebar-brand">
@@ -153,16 +110,6 @@ export function LibraryView({
       </header>
 
       <aside className="library-sidebar">
-        <div className="brand-block">
-          <div className="brand-mark">
-            <BookOpen size={22} />
-          </div>
-          <div>
-            <h1>Ereader</h1>
-            <span>本地阅读工作台</span>
-          </div>
-        </div>
-
         <nav className="nav-stack" aria-label="书库筛选">
           <FilterButton icon={<Library size={17} />} active={filter === "all"} onClick={() => setFilter("all")}>
             全部 <span>{librarySummary.total}</span>
@@ -178,7 +125,7 @@ export function LibraryView({
           </FilterButton>
           <button className="nav-item" onClick={onOpenStats}>
             <ChartNoAxesCombined size={17} />
-            统计 <span>阅读</span>
+            统计
           </button>
         </nav>
 
@@ -197,19 +144,16 @@ export function LibraryView({
       <section className="library-main">
         <header className="library-header">
           <div className="library-heading">
-            <p className="eyebrow">Library</p>
-            <h2>阅读书架</h2>
+            <h2>书架</h2>
             <div className="library-stats" aria-label="书库统计">
               <span>{librarySummary.total} 本</span>
-              <span>{librarySummary.ready} 就绪</span>
-              <span>{librarySummary.comics} 漫画</span>
-              <span>{librarySummary.novels} 小说</span>
+              {store.books.some((book) => book.importStatus === "queued" || book.importStatus === "processing") && <span>处理中</span>}
             </div>
           </div>
 
           <div className="library-command-bar">
             {continueBook && (
-              <button className="continue-action" onClick={() => onOpenBook(continueBook)}>
+              <button className="continue-action" onClick={() => onOpenBook(continueBook)} title={`继续阅读：${continueBook.title}`}>
                 <Play size={16} />
                 继续阅读
                 <span>{continueBook.title}</span>
@@ -222,6 +166,7 @@ export function LibraryView({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={store.books.length ? "搜索标题或路径" : "导入后可搜索书库"}
+                aria-label="搜索书库"
               />
               {query && (
                 <button className="search-clear" onClick={() => setQuery("")} title="清除搜索">
@@ -267,11 +212,11 @@ export function LibraryView({
               <BookCard
                 key={book.id}
                 book={book}
-                onOpen={() => onOpenBook(book)}
-                onRemove={() => onRemoveBook(book.id)}
-                onUpdateBook={(patch) => onUpdateBook(book.id, patch)}
-                onRebuild={() => onRebuildBook(book.id)}
-                onCancelImport={() => onCancelImport(book.id)}
+                onOpen={onOpenBook}
+                onRemove={onRemoveBook}
+                onUpdateBook={onUpdateBook}
+                onRebuild={onRebuildBook}
+                onCancelImport={onCancelImport}
               />
             ))}
           </div>
@@ -301,13 +246,9 @@ function FilterButton({
   onClick: () => void;
 }) {
   return (
-    <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}>
+    <button className={active ? "nav-item active" : "nav-item"} onClick={onClick} aria-pressed={active}>
       {icon}
       {children}
     </button>
   );
-}
-
-function hasDraggedFiles(event: DragEvent<HTMLElement>) {
-  return Array.from(event.dataTransfer.types).includes("Files");
 }
